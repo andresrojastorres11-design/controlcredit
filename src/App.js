@@ -567,8 +567,21 @@ const Creditos=({creditos,setCreditos,clients,t})=>{
                   </div>
                 </div>
                 {exp&&<div style={{borderTop:`1px solid ${t.border}`,padding:"16px 22px",background:t.bg}}>
-                  <div style={{fontSize:11,fontWeight:700,color:t.sub,textTransform:"uppercase",marginBottom:10}}>Cronograma — click en ✏️ para editar</div>
-                  <TablaCuotas credito={c} onActualizar={actualizarCredito} t={t}/>
+                  <div style={{fontSize:11,fontWeight:700,color:t.sub,textTransform:"uppercase",marginBottom:10}}>Cronograma — click en ✏️ para editar fecha o pago</div>
+                  {(!c.detalleCuotas||c.detalleCuotas.length===0)?(
+                    <div style={{textAlign:"center",padding:"20px"}}>
+                      <div style={{fontSize:13,color:t.sub,marginBottom:12}}>Este crédito no tiene cuotas generadas todavía.</div>
+                      <button onClick={async()=>{
+                        const det=crearDetalleCuotas(c.fechaOtorg,c.frecuencia,c.cuotas,c.valorCuota);
+                        await sb.from("creditos").update({detalle_cuotas:det}).eq("id",c.id);
+                        actualizarCredito({...c,detalleCuotas:det});
+                      }} style={{background:t.accent,color:"#fff",border:"none",borderRadius:8,padding:"9px 18px",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+                        ✨ Generar cuotas automáticamente
+                      </button>
+                    </div>
+                  ):(
+                    <TablaCuotas credito={c} onActualizar={actualizarCredito} t={t}/>
+                  )}
                 </div>}
               </div>
             );

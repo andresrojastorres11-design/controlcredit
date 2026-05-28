@@ -693,24 +693,31 @@ const Dashboard=({clients,creditos,productos,t})=>{
     return s+det.reduce((ss,d)=>{const extra=(d.valorCuotaEditado||0)-(c.valorCuota||0);return ss+(extra>0&&d.estado==="Pagada"?extra:0);},0);
   },0);
 
-  // Pagos tabs
-  const en3dias=new Date(hoy);en3dias.setDate(hoy.getDate()+3);
+  // Pagos tabs — lógica actualizada
   const itemsPagos=activos.map(c=>{
-    const proxFecha=c.proximoPago?new Date(c.proximoPago):null;
+    const det=c.detalleCuotas||[];
+    // Buscar la próxima cuota pendiente o parcial
+    const proxCuota=det.find(d=>d.estado==="Pendiente"||d.estado==="Parcial");
+    if(!proxCuota)return null; // todas las cuotas pagadas, no mostrar
+    const proxFecha=proxCuota.fechaVenc?new Date(proxCuota.fechaVenc):c.proximoPago?new Date(c.proximoPago):null;
     if(proxFecha)proxFecha.setHours(0,0,0,0);
     const diffDias=proxFecha?Math.round((proxFecha-hoy)/(1000*60*60*24)):null;
-    let cat="aldia";
-    if(c.estado==="Moroso"||c.estado==="Atrasado"||(proxFecha&&diffDias<0))cat="moroso";
-    else if(proxFecha&&diffDias<=3)cat="porvencer";
-    return{...c,proxFecha,diffDias,cat};
-  });
+    let cat=null;
+    if(diffDias===null)return null;
+    if(diffDias===0)cat="aldia";           // vence HOY
+    else if(diffDias>0&&diffDias<=3)cat="porvencer"; // vence en 1-3 días
+    else if(diffDias<0&&diffDias>=-2)cat="vencido";  // venció hace 1-2 días
+    else if(diffDias<-2)cat="vencido";    // venció hace más de 2 días → vencido
+    else return null; // más de 3 días → no mostrar todavía
+    return{...c,proxFecha,diffDias,cat,proxCuota};
+  }).filter(Boolean);
   const pagosAlDia=itemsPagos.filter(i=>i.cat==="aldia");
   const pagosPorVencer=itemsPagos.filter(i=>i.cat==="porvencer");
-  const pagosMorosos=itemsPagos.filter(i=>i.cat==="moroso");
+  const pagosMorosos=itemsPagos.filter(i=>i.cat==="vencido");
   const tabsConfig=[
     {id:"aldia",label:"Al día",count:pagosAlDia.length,color:"#10b981",bg:"#d1fae510",border:"#10b98130"},
     {id:"porvencer",label:"Por vencer",count:pagosPorVencer.length,color:"#f59e0b",bg:"#fef3c710",border:"#f59e0b30"},
-    {id:"moroso",label:"Morosos",count:pagosMorosos.length,color:"#ef4444",bg:"#fee2e210",border:"#ef444430"},
+    {id:"moroso",label:"Vencidos",count:pagosMorosos.length,color:"#ef4444",bg:"#fee2e210",border:"#ef444430"},
   ];
   const listaActiva=tabPagos==="aldia"?pagosAlDia:tabPagos==="porvencer"?pagosPorVencer:pagosMorosos;
   const tabActiva=tabsConfig.find(tab=>tab.id===tabPagos);
@@ -805,14 +812,14 @@ const Dashboard=({clients,creditos,productos,t})=>{
               <div style={{textAlign:"center",padding:"28px 0",color:t.sub}}>
                 <div style={{fontSize:32,marginBottom:8}}>{tabPagos==="aldia"?"✅":tabPagos==="porvencer"?"⏰":"🎉"}</div>
                 <div style={{fontSize:13,fontWeight:600,color:t.text}}>
-                  {tabPagos==="aldia"?"No hay créditos al día activos":tabPagos==="porvencer"?"Ningún vencimiento en los próximos 3 días":"No hay clientes morosos"}
+                  {tabPagos==="aldia"?"Ningún cliente paga hoy":tabPagos==="porvencer"?"Ningún vencimiento en los próximos 3 días":"No hay pagos vencidos 🎉"}
                 </div>
               </div>
             ):(
               <div style={{display:"grid",gap:10}}>
                 {listaActiva.map(c=>{
                   const clienteInfo=clients.find(cl=>cl.id===c.clienteId);
-                  const diffLabel=c.diffDias===null?"Sin fecha":c.diffDias<0?`Venció hace ${Math.abs(c.diffDias)} día${Math.abs(c.diffDias)!==1?"s":""}`  :c.diffDias===0?"Vence HOY":c.diffDias===1?"Vence mañana":`Vence en ${c.diffDias} días`;
+                  const diffLabel=c.diffDias===0?"Vence HOY":c.diffDias>0?`Vence en ${c.diffDias} día${c.diffDias!==1?"s":""}`:c.diffDias===-1?"Venció ayer":`Venció hace ${Math.abs(c.diffDias)} días`;
                   return(
                     <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:tabActiva.bg,borderRadius:10,border:`1px solid ${tabActiva.border}`,flexWrap:"wrap",gap:10}}>
                       <div style={{display:"flex",alignItems:"center",gap:12}}>

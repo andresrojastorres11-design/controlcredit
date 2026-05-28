@@ -25,17 +25,111 @@ const clientFromDB=(r)=>({id:r.id,nombre:r.nombre,apellido:r.apellido,dni:r.dni|
 const creditoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,monto:r.monto,totalCobrar:r.total_cobrar,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,valorCuota:r.valor_cuota,saldoCobrado:r.saldo_cobrado||0,saldoPendiente:r.saldo_pendiente,frecuencia:r.frecuencia,fechaOtorg:r.fecha_otorg,proximoPago:r.proximo_pago,estado:r.estado,comentarios:r.comentarios||"",historial:r.historial||[],detalleCuotas:r.detalle_cuotas||[]});
 const productoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,producto:r.producto,inversion:r.inversion,precioFinanciado:r.precio_financiado,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,saldoCobrado:r.saldo_cobrado||0,valorCuota:r.valor_cuota,estado:r.estado,frecuencia:r.frecuencia});
 
-// ── PDF ───────────────────────────────────────────────────────────────────────
+// ── PDF ENGINE ────────────────────────────────────────────────────────────────
+const abrirPDF=(html,nombre)=>{
+  const estiloImpresion=`<style>@media print{@page{margin:15mm;size:A4}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style>`;
+  const fullHtml=`<!DOCTYPE html><html><head><meta charset="UTF-8">${estiloImpresion}<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:12px;color:#1a1a2e;background:#fff;padding:20px}.header{background:linear-gradient(135deg,#1e3a8a,#3b82f6);color:#fff;padding:24px 28px;border-radius:10px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center}.logo{font-size:26px;font-weight:900;letter-spacing:-1px}.logo span{opacity:0.7}.subtitulo{font-size:11px;opacity:0.8;margin-top:3px}.seccion{margin-bottom:18px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}.seccion-titulo{background:#f8fafc;padding:10px 16px;font-weight:700;font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #e2e8f0}.seccion-body{padding:14px 16px}table{width:100%;border-collapse:collapse}td,th{padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:11px;text-align:left}th{font-weight:700;color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:0.04em}tr:last-child td{border-bottom:none}.total-row td{background:#1e3a8a;color:#fff;font-weight:700;border:none;padding:10px 12px}.metrica{display:inline-block;background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 16px;margin:4px;min-width:120px;text-align:center}.metrica-label{font-size:9px;color:#64748b;text-transform:uppercase;font-weight:700;margin-bottom:3px}.metrica-valor{font-size:16px;font-weight:900;color:#1e40af}.badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700}.badge-verde{background:#d1fae5;color:#065f46}.badge-rojo{background:#fee2e2;color:#991b1b}.badge-amarillo{background:#fef3c7;color:#92400e}.footer{text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8}</style></head><body>${html}<script>window.onload=()=>{window.print();}<\/script></body></html>`;
+  const win=window.open("","_blank");
+  if(win){win.document.write(fullHtml);win.document.close();}
+};
+
+// PDF de crédito individual
 const generatePDF=(credito)=>{
   const fecha=new Date().toLocaleDateString("es-AR");
-  const filas=(credito.detalleCuotas||[]).map(d=>`<tr><td>Cuota ${d.num}</td><td>${fmtFecha(d.fechaVenc)}</td><td>${fmt(d.montoPagado)}</td><td>${fmt(Math.max(0,credito.valorCuota-d.montoPagado))}</td><td>${d.estado}</td></tr>`).join("");
-  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:Georgia,serif;margin:0;padding:40px;color:#1a1a2e}table{width:100%;border-collapse:collapse;margin:16px 0}td,th{padding:9px 13px;border-bottom:1px solid #e2e8f0;font-size:12px;text-align:left}th{background:#f8fafc;font-weight:700;color:#475569;text-transform:uppercase;font-size:10px}.total td{background:#1e40af;color:#fff;font-weight:700;border:none}.logo{font-size:22px;font-weight:900;color:#3b82f6}.footer{margin-top:36px;padding-top:16px;border-top:1px solid #e2e8f0;text-align:center;color:#94a3b8;font-size:10px}</style></head><body><div style="border-bottom:3px solid #3b82f6;padding-bottom:18px;margin-bottom:24px;display:flex;justify-content:space-between"><div><div class="logo">ControlCredit</div><div style="color:#64748b;font-size:12px">Sistema de Gestión Financiera</div></div><div style="text-align:right;font-size:11px;color:#64748b">Estado de Deuda<br>Fecha: ${fecha}</div></div><p style="color:#64748b;font-size:13px">Cliente: <strong>${credito.clienteNombre}</strong> | Estado: <strong>${credito.estado}</strong> | Frecuencia: <strong>${credito.frecuencia}</strong></p><table><tr><th>Concepto</th><th>Detalle</th></tr><tr><td>Capital prestado</td><td>${fmt(credito.monto)}</td></tr><tr><td>Valor de cuota</td><td>${fmt(credito.valorCuota)}</td></tr><tr><td>Cuotas abonadas</td><td>${credito.cuotasPagadas} de ${credito.cuotas}</td></tr><tr><td>Ya abonado</td><td>${fmt(credito.saldoCobrado)}</td></tr><tr class="total"><td>SALDO PENDIENTE</td><td>${fmt(credito.saldoPendiente)}</td></tr></table><h3 style="font-size:13px;color:#0f172a;margin:20px 0 8px">Detalle de cuotas</h3><table><tr><th>#</th><th>Vencimiento</th><th>Pagado</th><th>Saldo cuota</th><th>Estado</th></tr>${filas}</table><div style="background:#f0f9ff;border-left:4px solid #3b82f6;padding:12px 16px;font-size:11px;color:#1e40af;margin-top:20px">Documento informativo. No implica reconocimiento de deuda.</div><div class="footer">ControlCredit &copy; ${new Date().getFullYear()} — No válido como recibo de pago</div></body></html>`;
-  const blob=new Blob([html],{type:"text/html;charset=utf-8"});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  a.href=url;a.download=`ControlCredit_${credito.clienteNombre.replace(/ /g,"_")}_${fecha.replace(/\//g,"-")}.html`;
-  document.body.appendChild(a);a.click();document.body.removeChild(a);
-  setTimeout(()=>URL.revokeObjectURL(url),2000);
+  const filas=(credito.detalleCuotas||[]).map(d=>{
+    const saldoCuota=Math.max(0,(credito.valorCuota||0)-d.montoPagado);
+    const badgeClass=d.estado==="Pagada"?"badge-verde":d.estado==="Parcial"?"badge-amarillo":"badge-rojo";
+    return`<tr><td style="font-weight:700">${d.num}</td><td>${fmtFecha(d.fechaVenc)}</td><td>${fmt(credito.valorCuota)}</td><td style="color:#10b981;font-weight:600">${fmt(d.montoPagado)}</td><td style="color:#ef4444;font-weight:600">${fmt(saldoCuota)}</td><td><span class="badge ${badgeClass}">${d.estado}</span></td></tr>`;
+  }).join("");
+  const pct=Math.round((credito.cuotasPagadas/credito.cuotas)*100);
+  const html=`
+    <div class="header">
+      <div><div class="logo">Control<span>Credit</span></div><div class="subtitulo">Sistema de Gestión Financiera</div></div>
+      <div style="text-align:right"><div style="font-size:13px;font-weight:700">Estado de Deuda</div><div style="font-size:11px;opacity:0.8">Generado: ${fecha}</div></div>
+    </div>
+    <div class="seccion">
+      <div class="seccion-titulo">Datos del cliente</div>
+      <div class="seccion-body">
+        <table><tr><td><strong>Cliente:</strong> ${credito.clienteNombre}</td><td><strong>Estado:</strong> <span class="badge ${credito.estado==="Al día"?"badge-verde":credito.estado==="Moroso"?"badge-rojo":"badge-amarillo"}">${credito.estado}</span></td><td><strong>Frecuencia:</strong> ${credito.frecuencia}</td><td><strong>Fecha otorgamiento:</strong> ${fmtFecha(credito.fechaOtorg)}</td></tr></table>
+      </div>
+    </div>
+    <div class="seccion">
+      <div class="seccion-titulo">Resumen financiero</div>
+      <div class="seccion-body" style="text-align:center">
+        <div class="metrica"><div class="metrica-label">Capital prestado</div><div class="metrica-valor">${fmt(credito.monto)}</div></div>
+        <div class="metrica"><div class="metrica-label">Valor de cuota</div><div class="metrica-valor">${fmt(credito.valorCuota)}</div></div>
+        <div class="metrica"><div class="metrica-label">Ya abonado</div><div class="metrica-valor" style="color:#10b981">${fmt(credito.saldoCobrado)}</div></div>
+        <div class="metrica"><div class="metrica-label">Saldo pendiente</div><div class="metrica-valor" style="color:#ef4444">${fmt(credito.saldoPendiente)}</div></div>
+        <div class="metrica"><div class="metrica-label">Cuotas pagadas</div><div class="metrica-valor">${credito.cuotasPagadas}/${credito.cuotas}</div></div>
+        <div class="metrica"><div class="metrica-label">Progreso</div><div class="metrica-valor">${pct}%</div></div>
+      </div>
+    </div>
+    ${filas?`<div class="seccion"><div class="seccion-titulo">Detalle de cuotas</div><div class="seccion-body"><table><tr><th>#</th><th>Vencimiento</th><th>Valor cuota</th><th>Pagado</th><th>Saldo</th><th>Estado</th></tr>${filas}</table></div></div>`:""}
+    <div style="background:#f0f9ff;border-left:4px solid #3b82f6;padding:12px 16px;font-size:11px;color:#1e40af;border-radius:0 8px 8px 0;margin-bottom:16px">
+      ⚠️ Documento informativo. No implica reconocimiento de deuda. Los montos pueden estar sujetos a actualizaciones.
+    </div>
+    <div class="footer">ControlCredit &copy; ${new Date().getFullYear()} — Documento generado automáticamente — No válido como recibo de pago</div>
+  `;
+  abrirPDF(html,`Credito_${credito.clienteNombre.replace(/ /g,"_")}`);
+};
+
+// PDF de reporte mensual
+const generateReporteMensual=(creditos,clientes,productos,mes,anio)=>{
+  const fecha=new Date().toLocaleDateString("es-AR");
+  const nombreMes=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"][mes-1];
+  const fechaDesde=`${anio}-${String(mes).padStart(2,"0")}-01`;
+  const fechaHasta=`${anio}-${String(mes).padStart(2,"0")}-${new Date(anio,mes,0).getDate()}`;
+  // Créditos otorgados ese mes
+  const creditosMes=creditos.filter(c=>c.fechaOtorg>=fechaDesde&&c.fechaOtorg<=fechaHasta);
+  // Pagos recibidos ese mes (cuotas pagadas con fecha en el mes)
+  const pagosMes=creditos.flatMap(c=>(c.historial||[]).filter(h=>h.tipo==="pago"||h.tipo==="pago_cuota").filter(h=>{if(!h.fecha)return false;const partes=h.fecha.split("/");if(partes.length<3)return false;const fechaH=`${partes[2]}-${partes[1].padStart(2,"0")}-${partes[0].padStart(2,"0")}`;return fechaH>=fechaDesde&&fechaH<=fechaHasta;}));
+  const totalPagadoMes=pagosMes.reduce((s,h)=>s+(h.monto||0),0);
+  // Métricas generales
+  const creditosActivos=creditos.filter(c=>c.estado!=="Finalizado");
+  const totalEnLaCalle=creditosActivos.reduce((s,c)=>s+(c.monto-c.monto*(c.cuotasPagadas/c.cuotas)),0);
+  const totalPorCobrar=creditosActivos.reduce((s,c)=>s+c.saldoPendiente,0);
+  const gananciaTotal=creditos.reduce((s,c)=>s+c.ganancia,0);
+  const gananciaReal=creditos.reduce((s,c)=>s+(c.ganancia/c.cuotas)*c.cuotasPagadas,0);
+  const morosos=clientes.filter(c=>c.estado==="Moroso");
+  const moraTotal=creditos.filter(c=>c.estado==="Moroso"||c.estado==="Atrasado").reduce((s,c)=>s+c.saldoPendiente,0);
+  const totalInvertido=creditos.reduce((s,c)=>s+c.monto,0)+productos.reduce((s,p)=>s+p.inversion,0);
+  const rendimiento=totalInvertido>0?((gananciaTotal/totalInvertido)*100).toFixed(1):0;
+  const filasCredMes=creditosMes.map(c=>`<tr><td>${c.clienteNombre}</td><td>${fmt(c.monto)}</td><td>${fmt(c.totalCobrar)}</td><td>${fmt(c.ganancia)}</td><td>${c.frecuencia}</td><td><span class="badge ${c.estado==="Al día"?"badge-verde":c.estado==="Moroso"?"badge-rojo":"badge-amarillo"}">${c.estado}</span></td></tr>`).join("");
+  const filasMorosos=morosos.map(m=>{const deuda=creditos.filter(c=>c.clienteId===m.id&&c.estado!=="Finalizado").reduce((s,c)=>s+c.saldoPendiente,0);return`<tr><td>${m.nombre} ${m.apellido}</td><td>${m.tel||"-"}</td><td style="color:#ef4444;font-weight:700">${fmt(deuda)}</td></tr>`;}).join("");
+  const html=`
+    <div class="header">
+      <div><div class="logo">Control<span>Credit</span></div><div class="subtitulo">Reporte Mensual — ${nombreMes} ${anio}</div></div>
+      <div style="text-align:right"><div style="font-size:13px;font-weight:700">Período</div><div style="font-size:11px;opacity:0.8">01/${String(mes).padStart(2,"0")}/${anio} al ${new Date(anio,mes,0).getDate()}/${String(mes).padStart(2,"0")}/${anio}</div><div style="font-size:10px;opacity:0.7;margin-top:4px">Generado: ${fecha}</div></div>
+    </div>
+    <div class="seccion">
+      <div class="seccion-titulo">📊 Métricas generales del negocio</div>
+      <div class="seccion-body" style="text-align:center">
+        <div class="metrica"><div class="metrica-label">Plata en la calle</div><div class="metrica-valor">${fmt(totalEnLaCalle)}</div></div>
+        <div class="metrica"><div class="metrica-label">Por cobrar total</div><div class="metrica-valor">${fmt(totalPorCobrar)}</div></div>
+        <div class="metrica"><div class="metrica-label">Total invertido</div><div class="metrica-valor">${fmt(totalInvertido)}</div></div>
+        <div class="metrica"><div class="metrica-label">Ganancia esperada</div><div class="metrica-valor" style="color:#8b5cf6">${fmt(gananciaTotal)}</div></div>
+        <div class="metrica"><div class="metrica-label">Ganancia realizada</div><div class="metrica-valor" style="color:#10b981">${fmt(gananciaReal)}</div></div>
+        <div class="metrica"><div class="metrica-label">Rendimiento</div><div class="metrica-valor" style="color:#8b5cf6">${rendimiento}%</div></div>
+        <div class="metrica"><div class="metrica-label">Mora total</div><div class="metrica-valor" style="color:#ef4444">${fmt(moraTotal)}</div></div>
+        <div class="metrica"><div class="metrica-label">Cobrado en el mes</div><div class="metrica-valor" style="color:#10b981">${fmt(totalPagadoMes)}</div></div>
+      </div>
+    </div>
+    <div class="seccion">
+      <div class="seccion-titulo">📋 Resumen del mes</div>
+      <div class="seccion-body">
+        <table>
+          <tr><td>Total de clientes</td><td style="font-weight:700">${clientes.length}</td><td>Clientes al día</td><td style="font-weight:700;color:#10b981">${clientes.filter(c=>c.estado==="Al día"||c.estado==="Premium").length}</td></tr>
+          <tr><td>Clientes morosos</td><td style="font-weight:700;color:#ef4444">${morosos.length}</td><td>Créditos activos</td><td style="font-weight:700">${creditosActivos.length}</td></tr>
+          <tr><td>Créditos otorgados este mes</td><td style="font-weight:700">${creditosMes.length}</td><td>Productos financiados activos</td><td style="font-weight:700">${productos.filter(p=>p.estado==="Activo").length}</td></tr>
+          <tr><td>Capital otorgado este mes</td><td style="font-weight:700">${fmt(creditosMes.reduce((s,c)=>s+c.monto,0))}</td><td>Pagos registrados este mes</td><td style="font-weight:700">${pagosMes.length}</td></tr>
+        </table>
+      </div>
+    </div>
+    ${creditosMes.length>0?`<div class="seccion"><div class="seccion-titulo">💳 Créditos otorgados en ${nombreMes} ${anio}</div><div class="seccion-body"><table><tr><th>Cliente</th><th>Capital</th><th>Total cobrar</th><th>Ganancia</th><th>Frecuencia</th><th>Estado</th></tr>${filasCredMes}</table></div></div>`:""}
+    ${morosos.length>0?`<div class="seccion"><div class="seccion-titulo">⚠️ Clientes morosos (${morosos.length})</div><div class="seccion-body"><table><tr><th>Cliente</th><th>Teléfono</th><th>Deuda total</th></tr>${filasMorosos}</table></div></div>`:""}
+    <div class="footer">ControlCredit &copy; ${new Date().getFullYear()} — Reporte ${nombreMes} ${anio} — Documento confidencial</div>
+  `;
+  abrirPDF(html,`Reporte_${nombreMes}_${anio}`);
 };
 
 // ── ICONS ─────────────────────────────────────────────────────────────────────
@@ -117,39 +211,76 @@ const TablaCuotas=({credito,onActualizar,t})=>{
   const [editIdx,setEditIdx]=useState(null);
   const [editFecha,setEditFecha]=useState("");
   const [editMonto,setEditMonto]=useState("");
-  const [modo,setModo]=useState("fecha");
+  const [editValorCuota,setEditValorCuota]=useState("");
+  const [modo,setModo]=useState("fecha"); // "fecha" | "pago" | "valor"
   const detalles=credito.detalleCuotas||[];
+
   const abrirEditFecha=(i)=>{setEditIdx(i);setEditFecha(detalles[i]?.fechaVenc||"");setModo("fecha");};
   const abrirEditPago=(i)=>{setEditIdx(i);setEditMonto(detalles[i]?.montoPagado?.toString()||"0");setModo("pago");};
-  const guardarFecha=()=>{if(editIdx===null)return;const nuevos=[...detalles];nuevos[editIdx]={...nuevos[editIdx],fechaVenc:editFecha};const proxPendiente=nuevos.find(d=>d.estado!=="Pagada");onActualizar({...credito,detalleCuotas:nuevos,proximoPago:proxPendiente?.fechaVenc||credito.proximoPago});setEditIdx(null);};
+  const abrirEditValor=(i)=>{setEditIdx(i);setEditValorCuota((detalles[i]?.valorCuotaEditado||credito.valorCuota)?.toString()||"");setModo("valor");};
+
+  const guardarFecha=()=>{
+    if(editIdx===null)return;
+    const nuevos=[...detalles];
+    nuevos[editIdx]={...nuevos[editIdx],fechaVenc:editFecha};
+    const proxPendiente=nuevos.find(d=>d.estado!=="Pagada");
+    onActualizar({...credito,detalleCuotas:nuevos,proximoPago:proxPendiente?.fechaVenc||credito.proximoPago});
+    setEditIdx(null);
+  };
+
+  const guardarValorCuota=()=>{
+    // Editar el valor de la cuota (ej: por mora o interés extra)
+    if(editIdx===null)return;
+    const nuevoValor=+editValorCuota||0;
+    const nuevos=[...detalles];
+    const valorAnterior=nuevos[editIdx].valorCuotaEditado||credito.valorCuota;
+    const diferencia=nuevoValor-valorAnterior;
+    nuevos[editIdx]={...nuevos[editIdx],valorCuotaEditado:nuevoValor};
+    // Recalcular total cobrar y pendiente
+    const nuevoTotal=credito.totalCobrar+diferencia;
+    const totalCobrado=nuevos.reduce((s,d)=>s+d.montoPagado,0);
+    const totalPendiente=Math.max(0,nuevoTotal-totalCobrado);
+    onActualizar({...credito,detalleCuotas:nuevos,totalCobrar:nuevoTotal,saldoPendiente:totalPendiente,
+      historial:[...credito.historial,{tipo:"edicion_valor_cuota",cuota:editIdx+1,valorAnterior,nuevoValor,fecha:new Date().toLocaleDateString("es-AR")}]});
+    setEditIdx(null);
+  };
+
   const guardarPago=()=>{
     if(editIdx===null)return;
     const p=+editMonto||0;
     const nuevos=[...detalles];
-    const vc=credito.valorCuota;
+    const vc=nuevos[editIdx].valorCuotaEditado||credito.valorCuota;
     nuevos[editIdx]={...nuevos[editIdx],montoPagado:p,estado:p<=0?"Pendiente":p>=vc?"Pagada":"Parcial",fechaPago:p>0?new Date().toLocaleDateString("es-AR"):null};
     const totalCobrado=nuevos.reduce((s,d)=>s+d.montoPagado,0);
-    const totalPendiente=Math.max(0,credito.totalCobrar-totalCobrado);
+    const nuevoTotal=nuevos.reduce((s,d)=>s+(d.valorCuotaEditado||credito.valorCuota),0);
+    const totalPendiente=Math.max(0,nuevoTotal-totalCobrado);
     const cuotasPagadas=nuevos.filter(d=>d.estado==="Pagada").length;
     const proxPendiente=nuevos.find(d=>d.estado!=="Pagada");
     const nuevoEstado=totalPendiente<=0?"Finalizado":credito.estado==="Moroso"&&p>0?"Atrasado":credito.estado;
-    onActualizar({...credito,detalleCuotas:nuevos,saldoCobrado:totalCobrado,saldoPendiente:totalPendiente,cuotasPagadas,proximoPago:proxPendiente?.fechaVenc||credito.proximoPago,estado:nuevoEstado,historial:[...credito.historial,{tipo:"pago_cuota",cuota:editIdx+1,monto:p,fecha:new Date().toLocaleDateString("es-AR")}]});
+    onActualizar({...credito,detalleCuotas:nuevos,saldoCobrado:totalCobrado,saldoPendiente:totalPendiente,
+      totalCobrar:nuevoTotal,cuotasPagadas,proximoPago:proxPendiente?.fechaVenc||credito.proximoPago,estado:nuevoEstado,
+      historial:[...credito.historial,{tipo:"pago_cuota",cuota:editIdx+1,monto:p,fecha:new Date().toLocaleDateString("es-AR")}]});
     setEditIdx(null);
   };
+
   if(detalles.length===0)return<div style={{padding:"12px",background:t.bg,borderRadius:8,fontSize:12,color:t.sub,textAlign:"center"}}>Sin cuotas registradas</div>;
+
   return(
     <div>
       <div style={{overflowX:"auto"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-          <thead><tr style={{background:t.bg}}>{["#","Vencimiento","Cuota","Pagado","Saldo","Estado","Acc."].map(h=><th key={h} style={{padding:"8px 10px",textAlign:"left",fontSize:10,fontWeight:700,color:t.sub,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+          <thead><tr style={{background:t.bg}}>{["#","Vencimiento","Valor cuota","Pagado","Saldo","Estado","Acciones"].map(h=><th key={h} style={{padding:"8px 10px",textAlign:"left",fontSize:10,fontWeight:700,color:t.sub,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
           <tbody>
             {detalles.map((d,i)=>{
-              const saldoCuota=Math.max(0,credito.valorCuota-d.montoPagado);
+              const valorReal=d.valorCuotaEditado||credito.valorCuota;
+              const saldoCuota=Math.max(0,valorReal-d.montoPagado);
               const editandoEsta=editIdx===i;
               const estadoColor=d.estado==="Pagada"?"#10b981":d.estado==="Parcial"?"#f59e0b":"#64748b";
+              const tieneEdicion=!!d.valorCuotaEditado&&d.valorCuotaEditado!==credito.valorCuota;
               return(
-                <tr key={i} style={{borderTop:`1px solid ${t.border}`,background:editandoEsta?`${t.accent}08`:"transparent"}}>
+                <tr key={i} style={{borderTop:`1px solid ${t.border}`,background:editandoEsta?`${t.accent}08`:tieneEdicion?"#fef3c720":"transparent"}}>
                   <td style={{padding:"8px 10px",fontWeight:700,color:t.text}}>{d.num}</td>
+                  {/* FECHA */}
                   <td style={{padding:"8px 10px"}}>
                     {editandoEsta&&modo==="fecha"?(
                       <div style={{display:"flex",gap:4,alignItems:"center"}}>
@@ -160,11 +291,27 @@ const TablaCuotas=({credito,onActualizar,t})=>{
                     ):(
                       <div style={{display:"flex",alignItems:"center",gap:4}}>
                         <span style={{color:t.text,fontWeight:600}}>{fmtFecha(d.fechaVenc)}</span>
-                        <button onClick={()=>abrirEditFecha(i)} style={{background:"none",border:"none",cursor:"pointer",color:t.sub,padding:2,display:"flex",alignItems:"center"}}><Icon name="edit" size={12}/></button>
+                        <button onClick={()=>abrirEditFecha(i)} style={{background:"none",border:"none",cursor:"pointer",color:t.sub,padding:2,display:"flex",alignItems:"center"}}><Icon name="edit" size={11}/></button>
                       </div>
                     )}
                   </td>
-                  <td style={{padding:"8px 10px",color:t.text,fontWeight:600}}>{fmt(credito.valorCuota)}</td>
+                  {/* VALOR CUOTA EDITABLE */}
+                  <td style={{padding:"8px 10px"}}>
+                    {editandoEsta&&modo==="valor"?(
+                      <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                        <input type="number" value={editValorCuota} onChange={e=>setEditValorCuota(e.target.value)} style={{width:100,padding:"4px 8px",borderRadius:6,border:`1px solid #f59e0b`,background:t.input,color:t.text,fontSize:12,outline:"none"}}/>
+                        <button onClick={guardarValorCuota} style={{background:"#f59e0b",border:"none",borderRadius:6,padding:"4px 8px",color:"#fff",cursor:"pointer",fontSize:11,fontWeight:700}}>OK</button>
+                        <button onClick={()=>setEditIdx(null)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"4px 6px",color:t.sub,cursor:"pointer"}}><Icon name="close" size={12}/></button>
+                      </div>
+                    ):(
+                      <div style={{display:"flex",alignItems:"center",gap:4}}>
+                        <span style={{color:tieneEdicion?"#f59e0b":t.text,fontWeight:tieneEdicion?700:600}}>{fmt(valorReal)}</span>
+                        {tieneEdicion&&<span style={{fontSize:9,color:"#f59e0b",fontWeight:700,background:"#fef3c7",padding:"1px 5px",borderRadius:4}}>+mora</span>}
+                        <button onClick={()=>abrirEditValor(i)} style={{background:"none",border:"none",cursor:"pointer",color:"#f59e0b",padding:2,display:"flex",alignItems:"center"}} title="Editar valor por mora/interés"><Icon name="edit" size={11}/></button>
+                      </div>
+                    )}
+                  </td>
+                  {/* MONTO PAGADO */}
                   <td style={{padding:"8px 10px"}}>
                     {editandoEsta&&modo==="pago"?(
                       <div style={{display:"flex",gap:4,alignItems:"center"}}>
@@ -175,16 +322,20 @@ const TablaCuotas=({credito,onActualizar,t})=>{
                     ):(
                       <div style={{display:"flex",alignItems:"center",gap:4}}>
                         <span style={{color:d.montoPagado>0?t.accent2:t.sub,fontWeight:d.montoPagado>0?700:400}}>{fmt(d.montoPagado)}</span>
-                        <button onClick={()=>abrirEditPago(i)} style={{background:"none",border:"none",cursor:"pointer",color:t.sub,padding:2,display:"flex",alignItems:"center"}}><Icon name="edit" size={12}/></button>
+                        <button onClick={()=>abrirEditPago(i)} style={{background:"none",border:"none",cursor:"pointer",color:t.sub,padding:2,display:"flex",alignItems:"center"}}><Icon name="edit" size={11}/></button>
                       </div>
                     )}
                   </td>
                   <td style={{padding:"8px 10px",color:saldoCuota>0?"#ef4444":t.accent2,fontWeight:700}}>{fmt(saldoCuota)}</td>
-                  <td style={{padding:"8px 10px"}}><span style={{color:estadoColor,fontWeight:600,fontSize:11}}>{d.estado}</span>{d.fechaPago&&<div style={{fontSize:10,color:t.sub}}>{d.fechaPago}</div>}</td>
+                  <td style={{padding:"8px 10px"}}>
+                    <span style={{color:estadoColor,fontWeight:600,fontSize:11}}>{d.estado}</span>
+                    {d.fechaPago&&<div style={{fontSize:10,color:t.sub}}>{d.fechaPago}</div>}
+                  </td>
                   <td style={{padding:"8px 10px"}}>
                     <div style={{display:"flex",gap:4}}>
-                      <button onClick={()=>abrirEditFecha(i)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"4px 7px",cursor:"pointer",color:t.sub,fontSize:10,display:"flex",alignItems:"center",gap:2}}><Icon name="calendar" size={11}/>Fecha</button>
-                      <button onClick={()=>abrirEditPago(i)} style={{background:"none",border:`1px solid ${t.accent2}`,borderRadius:6,padding:"4px 7px",cursor:"pointer",color:t.accent2,fontSize:10,display:"flex",alignItems:"center",gap:2}}><Icon name="edit" size={11}/>Pago</button>
+                      <button onClick={()=>abrirEditFecha(i)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"4px 7px",cursor:"pointer",color:t.sub,fontSize:10,display:"flex",alignItems:"center",gap:2}} title="Editar fecha"><Icon name="calendar" size={11}/></button>
+                      <button onClick={()=>abrirEditValor(i)} style={{background:"none",border:"1px solid #f59e0b",borderRadius:6,padding:"4px 7px",cursor:"pointer",color:"#f59e0b",fontSize:10,display:"flex",alignItems:"center",gap:2}} title="Editar valor por mora">$+</button>
+                      <button onClick={()=>abrirEditPago(i)} style={{background:"none",border:`1px solid ${t.accent2}`,borderRadius:6,padding:"4px 7px",cursor:"pointer",color:t.accent2,fontSize:10,display:"flex",alignItems:"center",gap:2}} title="Registrar pago"><Icon name="check" size={11}/></button>
                     </div>
                   </td>
                 </tr>
@@ -193,7 +344,10 @@ const TablaCuotas=({credito,onActualizar,t})=>{
           </tbody>
         </table>
       </div>
-      <div style={{display:"flex",gap:16,marginTop:8,fontSize:11,color:t.sub}}><span>🟢 Pagada</span><span>🟡 Parcial</span><span>⚫ Pendiente</span></div>
+      <div style={{display:"flex",gap:16,marginTop:8,fontSize:11,color:t.sub}}>
+        <span>🟢 Pagada</span><span>🟡 Parcial</span><span>⚫ Pendiente</span>
+        <span style={{color:"#f59e0b"}}>🟠 $+ = editar valor por mora</span>
+      </div>
     </div>
   );
 };
@@ -333,8 +487,86 @@ const PerfilCliente=({client,creditos,productos,setCreditos,onClose,onEdit,t})=>
   );
 };
 
-// ── DASHBOARD ─────────────────────────────────────────────────────────────────
+// ── USUARIOS (hardcoded, admin puede agregar) ─────────────────────────────────
+// Los usuarios se guardan en Supabase tabla "usuarios"
+const usuarioFromDB=(r)=>({id:r.id,nombre:r.nombre,user:r.user_name,rol:r.rol||"empleado",activo:r.activo!==false});
+
+// ── PANEL ADMIN USUARIOS ──────────────────────────────────────────────────────
+const AdminUsuarios=({t})=>{
+  const [usuarios,setUsuarios]=useState([]);
+  const [modal,setModal]=useState(false);
+  const [form,setForm]=useState({nombre:"",user_name:"",password:"",rol:"empleado"});
+  const [loading,setLoading]=useState(false);
+
+  useEffect(()=>{
+    sb.from("usuarios").select("*").then(({data})=>{if(data)setUsuarios(data.map(usuarioFromDB));});
+  },[]);
+
+  const save=async()=>{
+    if(!form.nombre||!form.user_name||!form.password)return;
+    setLoading(true);
+    const {data}=await sb.from("usuarios").insert({nombre:form.nombre,user_name:form.user_name,password:form.password,rol:form.rol,activo:true}).select().single();
+    if(data)setUsuarios(us=>[...us,usuarioFromDB(data)]);
+    setLoading(false);setModal(false);setForm({nombre:"",user_name:"",password:"",rol:"empleado"});
+  };
+
+  const toggleActivo=async(u)=>{
+    await sb.from("usuarios").update({activo:!u.activo}).eq("id",u.id);
+    setUsuarios(us=>us.map(x=>x.id===u.id?{...x,activo:!x.activo}:x));
+  };
+
+  const del=async(id)=>{
+    if(confirm("¿Eliminar usuario?")){ await sb.from("usuarios").delete().eq("id",id); setUsuarios(us=>us.filter(u=>u.id!==id)); }
+  };
+
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
+        <div><h1 style={{fontSize:22,fontWeight:800,color:t.text,margin:"0 0 2px"}}>👥 Panel de Usuarios</h1><p style={{color:t.sub,margin:0,fontSize:13}}>Solo visible para administradores</p></div>
+        <button onClick={()=>setModal(true)} style={{background:t.accent,color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Icon name="plus" size={15}/>Nuevo usuario</button>
+      </div>
+      <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:"hidden"}}>
+        <table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead><tr style={{background:t.bg}}>{["Nombre","Usuario","Rol","Estado","Acciones"].map(h=><th key={h} style={{padding:"11px 15px",textAlign:"left",fontSize:11,fontWeight:700,color:t.sub,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+          <tbody>
+            {usuarios.map(u=>(
+              <tr key={u.id} style={{borderTop:`1px solid ${t.border}`}}>
+                <td style={{padding:"12px 15px",fontWeight:600,color:t.text}}>{u.nombre}</td>
+                <td style={{padding:"12px 15px",color:t.sub,fontSize:13}}>{u.user}</td>
+                <td style={{padding:"12px 15px"}}><span style={{background:u.rol==="admin"?"#ede9fe":"#dbeafe",color:u.rol==="admin"?"#4c1d95":"#1e40af",padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:600}}>{u.rol}</span></td>
+                <td style={{padding:"12px 15px"}}><span style={{background:u.activo?"#d1fae5":"#fee2e2",color:u.activo?"#065f46":"#991b1b",padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:600}}>{u.activo?"Activo":"Inactivo"}</span></td>
+                <td style={{padding:"12px 15px"}}>
+                  <div style={{display:"flex",gap:6}}>
+                    <button onClick={()=>toggleActivo(u)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"5px 10px",cursor:"pointer",color:t.sub,fontSize:11,fontWeight:600}}>{u.activo?"Desactivar":"Activar"}</button>
+                    <button onClick={()=>del(u.id)} style={{background:"none",border:"1px solid #fca5a5",borderRadius:6,padding:"5px 8px",cursor:"pointer",color:"#ef4444"}}><Icon name="trash" size={14}/></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {usuarios.length===0&&<tr><td colSpan={5} style={{padding:"30px",textAlign:"center",color:t.sub}}>No hay usuarios creados</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <Modal open={modal} onClose={()=>setModal(false)} title="Nuevo usuario" t={t}>
+        <Field label="Nombre completo *" value={form.nombre} onChange={v=>setForm(f=>({...f,nombre:v}))} t={t}/>
+        <Field label="Nombre de usuario *" value={form.user_name} onChange={v=>setForm(f=>({...f,user_name:v}))} t={t} placeholder="Ej: maria123"/>
+        <Field label="Contraseña *" value={form.password} onChange={v=>setForm(f=>({...f,password:v}))} t={t}/>
+        <Field label="Rol" value={form.rol} onChange={v=>setForm(f=>({...f,rol:v}))} options={["empleado","admin"]} t={t}/>
+        <div style={{background:t.bg,borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:12,color:t.sub}}>
+          Los empleados solo ven sus propios clientes y créditos. Los admin ven todo.
+        </div>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <button onClick={()=>setModal(false)} style={{padding:"9px 18px",borderRadius:8,border:`1px solid ${t.border}`,background:"none",color:t.sub,cursor:"pointer",fontWeight:600}}>Cancelar</button>
+          <button onClick={save} disabled={loading} style={{padding:"9px 18px",borderRadius:8,border:"none",background:t.accent,color:"#fff",cursor:"pointer",fontWeight:700,opacity:loading?0.7:1}}>{loading?"Guardando...":"Crear usuario"}</button>
+        </div>
+      </Modal>
+    </div>
+  );
+};
 const Dashboard=({clients,creditos,productos,t})=>{
+  const hoy=new Date();
+  const [mesPDF,setMesPDF]=useState(hoy.getMonth()+1);
+  const [anioPDF,setAnioPDF]=useState(hoy.getFullYear());
   const activos=creditos.filter(c=>c.estado!=="Finalizado");
   const plata=activos.reduce((s,c)=>s+(c.monto-c.monto*(c.cuotasPagadas/c.cuotas)),0);
   const porCobrar=activos.reduce((s,c)=>s+c.saldoPendiente,0);
@@ -347,7 +579,21 @@ const Dashboard=({clients,creditos,productos,t})=>{
   const pie=[{name:"Al día",value:alDia},{name:"Morosos",value:morosos},{name:"Atrasados",value:clients.filter(c=>c.estado==="Atrasado").length}].filter(d=>d.value>0);
   return(
     <div>
-      <div style={{marginBottom:22}}><h1 style={{fontSize:24,fontWeight:800,color:t.text,margin:"0 0 4px"}}>Dashboard</h1><p style={{color:t.sub,margin:0,fontSize:14}}>{new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"})}</p></div>
+      <div style={{marginBottom:22,display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
+        <div><h1 style={{fontSize:24,fontWeight:800,color:t.text,margin:"0 0 4px"}}>Dashboard</h1><p style={{color:t.sub,margin:0,fontSize:14}}>{new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"})}</p></div>
+        <div style={{display:"flex",gap:8,alignItems:"center",background:t.card,padding:"10px 14px",borderRadius:12,border:`1px solid ${t.border}`}}>
+          <span style={{fontSize:12,color:t.sub,fontWeight:600}}>Reporte:</span>
+          <select value={mesPDF} onChange={e=>setMesPDF(+e.target.value)} style={{padding:"5px 8px",borderRadius:6,border:`1px solid ${t.border}`,background:t.input,color:t.text,fontSize:12,outline:"none"}}>
+            {["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"].map((m,i)=><option key={i} value={i+1}>{m}</option>)}
+          </select>
+          <select value={anioPDF} onChange={e=>setAnioPDF(+e.target.value)} style={{padding:"5px 8px",borderRadius:6,border:`1px solid ${t.border}`,background:t.input,color:t.text,fontSize:12,outline:"none"}}>
+            {[2024,2025,2026,2027].map(a=><option key={a} value={a}>{a}</option>)}
+          </select>
+          <button onClick={()=>generateReporteMensual(creditos,clients,productos,mesPDF,anioPDF)} style={{background:"#ef4444",color:"#fff",border:"none",borderRadius:8,padding:"7px 14px",fontWeight:700,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
+            <Icon name="pdf" size={14}/>Generar PDF
+          </button>
+        </div>
+      </div>
       {alertas.length>0&&<div style={{background:"#fef3c7",border:"1px solid #fcd34d",borderRadius:12,padding:"12px 18px",marginBottom:20,display:"flex",gap:10,alignItems:"center"}}><Icon name="alert" size={18}/><span style={{color:"#92400e",fontSize:13,fontWeight:600}}>{alertas.length} crédito(s) requieren atención.</span></div>}
       {clients.length===0&&<div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"40px",textAlign:"center",marginBottom:20}}><div style={{fontSize:36,marginBottom:12}}>🚀</div><div style={{fontSize:16,fontWeight:700,color:t.text,marginBottom:6}}>¡Bienvenido a ControlCredit!</div><div style={{fontSize:13,color:t.sub}}>Empezá agregando tu primer cliente.</div></div>}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:14,marginBottom:24}}>
@@ -360,6 +606,172 @@ const Dashboard=({clients,creditos,productos,t})=>{
         <MetricCard label="Créditos activos" value={activos.length} icon="creditos" color="#3b82f6" t={t}/>
         <MetricCard label="Prod. activos" value={productos.filter(p=>p.estado==="Activo").length} icon="productos" color="#10b981" t={t}/>
       </div>
+
+      {/* ── FLUJO DE EFECTIVO ── */}
+      {creditos.length>0&&(()=>{
+        // Flujo real = todo el dinero cobrado efectivamente (capital + interés incluido)
+        const totalCobradoReal=creditos.reduce((s,c)=>s+c.saldoCobrado,0);
+        // Flujo pendiente = todo lo que falta cobrar (capital + interés pendiente, incluyendo moras editadas)
+        const totalPendienteReal=creditos.reduce((s,c)=>s+c.saldoPendiente,0);
+        // Flujo total = totalCobrado + totalPendiente = todo el dinero que va a circular
+        const flujoTotal=totalCobradoReal+totalPendienteReal;
+        // Interés ya cobrado = cobrado - capital recuperado
+        const capitalRecuperado=creditos.reduce((s,c)=>s+c.monto*(c.cuotasPagadas/c.cuotas),0);
+        const interesesCobrados=Math.max(0,totalCobradoReal-capitalRecuperado);
+        // Moras cobradas (cuotas con valor editado)
+        const morasCobradas=creditos.reduce((s,c)=>{
+          const det=c.detalleCuotas||[];
+          return s+det.reduce((ss,d)=>{
+            const extra=(d.valorCuotaEditado||0)-(c.valorCuota||0);
+            return ss+(extra>0&&d.estado==="Pagada"?extra:0);
+          },0);
+        },0);
+        return(
+          <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"20px 24px",marginBottom:20}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
+              <div>
+                <h3 style={{margin:"0 0 3px",fontSize:16,fontWeight:800,color:t.text}}>💵 Flujo de Efectivo</h3>
+                <p style={{margin:0,fontSize:12,color:t.sub}}>Capital + intereses que circulan en tu negocio</p>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:12,marginBottom:16}}>
+              <div style={{background:`#3b82f618`,borderRadius:12,padding:"14px 18px",border:"1px solid #3b82f630"}}>
+                <div style={{fontSize:10,color:"#3b82f6",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Total flujo proyectado</div>
+                <div style={{fontSize:20,fontWeight:900,color:t.text}}>{fmt(flujoTotal)}</div>
+                <div style={{fontSize:11,color:t.sub,marginTop:2}}>Capital + intereses totales</div>
+              </div>
+              <div style={{background:`#10b98118`,borderRadius:12,padding:"14px 18px",border:"1px solid #10b98130"}}>
+                <div style={{fontSize:10,color:"#10b981",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Ya cobrado (efectivo)</div>
+                <div style={{fontSize:20,fontWeight:900,color:"#10b981"}}>{fmt(totalCobradoReal)}</div>
+                <div style={{fontSize:11,color:t.sub,marginTop:2}}>Dinero que ya tenés en mano</div>
+              </div>
+              <div style={{background:`#ef444418`,borderRadius:12,padding:"14px 18px",border:"1px solid #ef444430"}}>
+                <div style={{fontSize:10,color:"#ef4444",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Pendiente de cobrar</div>
+                <div style={{fontSize:20,fontWeight:900,color:"#ef4444"}}>{fmt(totalPendienteReal)}</div>
+                <div style={{fontSize:11,color:t.sub,marginTop:2}}>Falta recibir</div>
+              </div>
+              <div style={{background:`#8b5cf618`,borderRadius:12,padding:"14px 18px",border:"1px solid #8b5cf630"}}>
+                <div style={{fontSize:10,color:"#8b5cf6",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Intereses cobrados</div>
+                <div style={{fontSize:20,fontWeight:900,color:"#8b5cf6"}}>{fmt(interesesCobrados)}</div>
+                <div style={{fontSize:11,color:t.sub,marginTop:2}}>Ganancia ya realizada</div>
+              </div>
+              {morasCobradas>0&&<div style={{background:`#f59e0b18`,borderRadius:12,padding:"14px 18px",border:"1px solid #f59e0b30"}}>
+                <div style={{fontSize:10,color:"#f59e0b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Moras cobradas</div>
+                <div style={{fontSize:20,fontWeight:900,color:"#f59e0b"}}>{fmt(morasCobradas)}</div>
+                <div style={{fontSize:11,color:t.sub,marginTop:2}}>Intereses por atrasos</div>
+              </div>}
+            </div>
+            {/* Barra de progreso del flujo */}
+            <div>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                <span style={{fontSize:12,color:t.sub,fontWeight:600}}>Progreso de cobro</span>
+                <span style={{fontSize:13,fontWeight:800,color:t.text}}>{flujoTotal>0?Math.round((totalCobradoReal/flujoTotal)*100):0}%</span>
+              </div>
+              <div style={{height:10,borderRadius:5,background:t.border,overflow:"hidden"}}>
+                <div style={{width:`${flujoTotal>0?(totalCobradoReal/flujoTotal)*100:0}%`,height:"100%",background:"linear-gradient(90deg,#3b82f6,#10b981)",borderRadius:5,transition:"width 0.5s"}}/>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",marginTop:4,fontSize:11,color:t.sub}}>
+                <span>Cobrado: {fmt(totalCobradoReal)}</span>
+                <span>Pendiente: {fmt(totalPendienteReal)}</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+      {(creditos.length>0||clients.length>0)&&(()=>{
+        const hoy=new Date();hoy.setHours(0,0,0,0);
+        const en3dias=new Date(hoy);en3dias.setDate(hoy.getDate()+3);
+        // Para cada crédito activo, tomamos la próxima cuota pendiente
+        const creditosActivos=creditos.filter(c=>c.estado!=="Finalizado");
+        const items=creditosActivos.map(c=>{
+          const proxFecha=c.proximoPago?new Date(c.proximoPago):null;
+          if(proxFecha)proxFecha.setHours(0,0,0,0);
+          const diffDias=proxFecha?Math.round((proxFecha-hoy)/(1000*60*60*24)):null;
+          let categoria="aldia";
+          if(c.estado==="Moroso")categoria="moroso";
+          else if(proxFecha&&diffDias<0)categoria="moroso";
+          else if(proxFecha&&diffDias<=3)categoria="porvencer";
+          else categoria="aldia";
+          return{...c,proxFecha,diffDias,categoria};
+        });
+        const alDia=items.filter(i=>i.categoria==="aldia");
+        const porVencer=items.filter(i=>i.categoria==="porvencer");
+        const morosos=items.filter(i=>i.categoria==="moroso");
+        const [tabPagos,setTabPagos]=useState("aldia");
+        const lista=tabPagos==="aldia"?alDia:tabPagos==="porvencer"?porVencer:morosos;
+        const tabs=[
+          {id:"aldia",label:"Al día",count:alDia.length,color:"#10b981",bg:"#d1fae5"},
+          {id:"porvencer",label:"Por vencer",count:porVencer.length,color:"#f59e0b",bg:"#fef3c7"},
+          {id:"moroso",label:"Morosos",count:morosos.length,color:"#ef4444",bg:"#fee2e2"},
+        ];
+        return(
+          <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,marginBottom:18,overflow:"hidden"}}>
+            <div style={{padding:"18px 22px 0"}}>
+              <h3 style={{margin:"0 0 14px",fontSize:16,fontWeight:800,color:t.text}}>💳 Pagos</h3>
+              {/* Tabs */}
+              <div style={{display:"flex",gap:8,marginBottom:0}}>
+                {tabs.map(tab=>(
+                  <button key={tab.id} onClick={()=>setTabPagos(tab.id)}
+                    style={{display:"flex",alignItems:"center",gap:7,padding:"9px 18px",borderRadius:"10px 10px 0 0",border:`1px solid ${tabPagos===tab.id?tab.color:t.border}`,borderBottom:tabPagos===tab.id?`2px solid ${tab.color}`:`1px solid ${t.border}`,background:tabPagos===tab.id?tab.bg:"transparent",cursor:"pointer",fontWeight:700,fontSize:13,color:tabPagos===tab.id?tab.color:t.sub,transition:"all 0.15s"}}>
+                    <span style={{width:22,height:22,borderRadius:"50%",background:tab.color,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900}}>{tab.count}</span>
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Contenido */}
+            <div style={{borderTop:`2px solid ${tabs.find(t=>t.id===tabPagos)?.color||t.border}`,padding:"16px 22px",maxHeight:420,overflowY:"auto"}}>
+              {lista.length===0?(
+                <div style={{textAlign:"center",padding:"30px 0",color:t.sub}}>
+                  <div style={{fontSize:32,marginBottom:8}}>{tabPagos==="aldia"?"✅":tabPagos==="porvencer"?"⏰":"🔴"}</div>
+                  <div style={{fontSize:13,fontWeight:600,color:t.text}}>
+                    {tabPagos==="aldia"?"Sin créditos al día por mostrar":tabPagos==="porvencer"?"No hay vencimientos en los próximos 3 días":"No hay clientes morosos 🎉"}
+                  </div>
+                </div>
+              ):(
+                <div style={{display:"grid",gap:10}}>
+                  {lista.map(c=>{
+                    const colorTab=tabs.find(tab=>tab.id===tabPagos)?.color||t.accent;
+                    const bgTab=tabs.find(tab=>tab.id===tabPagos)?.bg||t.bg;
+                    const diffLabel=c.diffDias===null?"Sin fecha":c.diffDias<0?`Venció hace ${Math.abs(c.diffDias)} día${Math.abs(c.diffDias)!==1?"s":""}`:c.diffDias===0?"Vence HOY":c.diffDias===1?"Vence mañana":`Vence en ${c.diffDias} días`;
+                    const clienteInfo=clients.find(cl=>cl.id===c.clienteId);
+                    return(
+                      <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:bgTab,borderRadius:10,border:`1px solid ${colorTab}30`,flexWrap:"wrap",gap:10}}>
+                        <div style={{display:"flex",alignItems:"center",gap:12}}>
+                          <div style={{width:40,height:40,borderRadius:"50%",background:colorTab,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:14,flexShrink:0}}>
+                            {c.clienteNombre?c.clienteNombre[0]:"?"}
+                          </div>
+                          <div>
+                            <div style={{fontWeight:700,color:t.text,fontSize:14}}>{c.clienteNombre}</div>
+                            <div style={{fontSize:11,color:t.sub,display:"flex",gap:10,flexWrap:"wrap"}}>
+                              <span>Cuota: <strong style={{color:t.text}}>{fmt(c.valorCuota)}</strong></span>
+                              <span>Pendiente: <strong style={{color:colorTab}}>{fmt(c.saldoPendiente)}</strong></span>
+                              <span>Frecuencia: {c.frecuencia}</span>
+                              <span style={{fontWeight:700,color:colorTab}}>{diffLabel}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                          {clienteInfo?.tel&&(
+                            <a href={`https://wa.me/54${clienteInfo.tel.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer"
+                              style={{display:"flex",alignItems:"center",gap:5,background:"#25D366",color:"#fff",borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:700,textDecoration:"none"}}>
+                              <Icon name="whatsapp" size={14}/>WhatsApp
+                            </a>
+                          )}
+                          <div style={{textAlign:"right"}}>
+                            <div style={{fontSize:11,color:t.sub}}>{c.cuotasPagadas}/{c.cuotas} cuotas</div>
+                            <div style={{fontSize:10,color:t.sub}}>Próx: {fmtFecha(c.proximoPago)}</div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
       {(creditos.length>0||clients.length>0)&&<div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:18,marginBottom:18}}>
         <div style={{background:t.card,borderRadius:14,padding:"20px 22px",border:`1px solid ${t.border}`}}>
           <h3 style={{margin:"0 0 16px",fontSize:15,fontWeight:700,color:t.text}}>Evolución mensual</h3>
@@ -786,20 +1198,29 @@ const Alertas=({creditos,clients,t})=>{
 };
 
 // ── APP ROOT ──────────────────────────────────────────────────────────────────
+// ── APP ROOT ──────────────────────────────────────────────────────────────────
 export default function App(){
   const [dark,setDark]=useState(true);
   const [screen,setScreen]=useState("dashboard");
-  const [clients,setClients]=useState([]);
-  const [creditos,setCreditos]=useState([]);
-  const [productos,setProductos]=useState([]);
+  const [allClients,setAllClients]=useState([]);
+  const [allCreditos,setAllCreditos]=useState([]);
+  const [allProductos,setAllProductos]=useState([]);
   const [sideOpen,setSideOpen]=useState(true);
   const [loggedIn,setLoggedIn]=useState(false);
+  const [usuarioActual,setUsuarioActual]=useState(null);
   const [loginForm,setLoginForm]=useState({user:"",pass:""});
   const [loginErr,setLoginErr]=useState("");
   const [loadingData,setLoadingData]=useState(false);
   const t=dark?DARK:LIGHT;
 
-  // Cargar datos desde Supabase al hacer login
+  const esAdmin=usuarioActual?.rol==="admin"||usuarioActual?.user==="andres";
+  const clients=esAdmin?allClients:allClients.filter(c=>!c.usuarioId||c.usuarioId===usuarioActual?.id);
+  const creditos=esAdmin?allCreditos:allCreditos.filter(c=>!c.usuarioId||c.usuarioId===usuarioActual?.id);
+  const productos=esAdmin?allProductos:allProductos.filter(p=>!p.usuarioId||p.usuarioId===usuarioActual?.id);
+  const setClients=(fn)=>setAllClients(fn);
+  const setCreditos=(fn)=>setAllCreditos(fn);
+  const setProductos=(fn)=>setAllProductos(fn);
+
   const cargarDatos=async()=>{
     setLoadingData(true);
     const [{data:cls},{data:crs},{data:prds}]=await Promise.all([
@@ -807,25 +1228,29 @@ export default function App(){
       sb.from("creditos").select("*").order("id"),
       sb.from("productos").select("*").order("id"),
     ]);
-    if(cls)setClients(cls.map(clientFromDB));
-    if(crs)setCreditos(crs.map(creditoFromDB));
-    if(prds)setProductos(prds.map(productoFromDB));
+    if(cls)setAllClients(cls.map(clientFromDB));
+    if(crs)setAllCreditos(crs.map(creditoFromDB));
+    if(prds)setAllProductos(prds.map(productoFromDB));
     setLoadingData(false);
   };
 
-  const doLogin=()=>{
-    if(loginForm.user==="admin"&&loginForm.pass==="1234"){
-      setLoggedIn(true);setLoginErr("");
-      cargarDatos();
-    } else setLoginErr("Usuario o contraseña incorrectos");
+  const doLogin=async()=>{
+    if(!loginForm.user||!loginForm.pass){setLoginErr("Completá usuario y contraseña");return;}
+    if(loginForm.user==="andres"&&loginForm.pass==="Laliga2215"){
+      setUsuarioActual({id:0,nombre:"Andres",user:"andres",rol:"admin"});
+      setLoggedIn(true);setLoginErr("");cargarDatos();return;
+    }
+    const {data}=await sb.from("usuarios").select("*").eq("user_name",loginForm.user).eq("password",loginForm.pass).eq("activo",true).single();
+    if(data){setUsuarioActual(usuarioFromDB(data));setLoggedIn(true);setLoginErr("");cargarDatos();}
+    else setLoginErr("Usuario o contraseña incorrectos");
   };
 
   if(!loggedIn)return(
     <div style={{minHeight:"100vh",background:t.bg,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"system-ui,sans-serif"}}>
       <div style={{background:t.card,borderRadius:20,padding:"40px 44px",width:360,boxShadow:"0 32px 80px rgba(0,0,0,0.3)",border:`1px solid ${t.border}`}}>
         <div style={{textAlign:"center",marginBottom:32}}><div style={{fontSize:30,fontWeight:900,color:t.accent,letterSpacing:"-2px",marginBottom:4}}>Control<span style={{color:t.text}}>Credit</span></div><div style={{fontSize:13,color:t.sub}}>Sistema de Gestión Financiera</div></div>
-        <div style={{marginBottom:14}}><label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:4,textTransform:"uppercase"}}>Usuario</label><input value={loginForm.user} onChange={e=>setLoginForm(f=>({...f,user:e.target.value}))} placeholder="admin" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}} onKeyDown={e=>e.key==="Enter"&&doLogin()}/></div>
-        <div style={{marginBottom:20}}><label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:4,textTransform:"uppercase"}}>Contraseña</label><input type="password" value={loginForm.pass} onChange={e=>setLoginForm(f=>({...f,pass:e.target.value}))} placeholder="1234" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}} onKeyDown={e=>e.key==="Enter"&&doLogin()}/></div>
+        <div style={{marginBottom:14}}><label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:4,textTransform:"uppercase"}}>Usuario</label><input value={loginForm.user} onChange={e=>setLoginForm(f=>({...f,user:e.target.value}))} placeholder="Tu usuario" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}} onKeyDown={e=>e.key==="Enter"&&doLogin()}/></div>
+        <div style={{marginBottom:20}}><label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:4,textTransform:"uppercase"}}>Contraseña</label><input type="password" value={loginForm.pass} onChange={e=>setLoginForm(f=>({...f,pass:e.target.value}))} placeholder="Tu contraseña" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}} onKeyDown={e=>e.key==="Enter"&&doLogin()}/></div>
         {loginErr&&<div style={{color:"#ef4444",fontSize:12,marginBottom:12,textAlign:"center"}}>{loginErr}</div>}
         <button onClick={doLogin} style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:t.accent,color:"#fff",fontWeight:700,fontSize:15,cursor:"pointer"}}>Ingresar</button>
       </div>
@@ -834,14 +1259,19 @@ export default function App(){
 
   if(loadingData)return(
     <div style={{minHeight:"100vh",background:t.bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <div style={{textAlign:"center",color:t.sub}}>
-        <div style={{fontSize:36,marginBottom:12}}>⏳</div>
-        <div style={{fontSize:15,fontWeight:700,color:t.text}}>Cargando datos...</div>
-      </div>
+      <div style={{textAlign:"center",color:t.sub}}><div style={{fontSize:36,marginBottom:12}}>⏳</div><div style={{fontSize:15,fontWeight:700,color:t.text}}>Cargando datos...</div></div>
     </div>
   );
 
-  const NAV=[{id:"dashboard",label:"Dashboard",icon:"dashboard"},{id:"clientes",label:"Clientes",icon:"users"},{id:"creditos",label:"Créditos",icon:"creditos"},{id:"productos",label:"Productos",icon:"productos"},{id:"cartera",label:"Cartera",icon:"cartera"},{id:"alertas",label:"Alertas",icon:"alert"}];
+  const NAV=[
+    {id:"dashboard",label:"Dashboard",icon:"dashboard"},
+    {id:"clientes",label:"Clientes",icon:"users"},
+    {id:"creditos",label:"Créditos",icon:"creditos"},
+    {id:"productos",label:"Productos",icon:"productos"},
+    {id:"cartera",label:"Cartera",icon:"cartera"},
+    {id:"alertas",label:"Alertas",icon:"alert"},
+    ...(esAdmin?[{id:"usuarios",label:"Usuarios",icon:"users"}]:[]),
+  ];
   const alertCount=creditos.filter(c=>c.estado==="Moroso"||c.estado==="Atrasado").length;
 
   return(
@@ -851,6 +1281,11 @@ export default function App(){
           <div style={{width:34,height:34,borderRadius:10,background:t.accent,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name="coin" size={17}/></div>
           {sideOpen&&<div style={{fontSize:15,fontWeight:900,color:"#fff",whiteSpace:"nowrap"}}>Control<span style={{color:t.accent}}>Credit</span></div>}
         </div>
+        {sideOpen&&usuarioActual&&<div style={{padding:"10px 16px 0",borderBottom:"1px solid #ffffff10"}}>
+          <div style={{fontSize:11,color:"#64748b",marginBottom:2}}>Conectado como</div>
+          <div style={{fontSize:13,fontWeight:700,color:"#fff",marginBottom:6}}>{usuarioActual.nombre}</div>
+          <div style={{fontSize:10,background:esAdmin?"#4c1d95":"#1e3a8a",color:"#fff",padding:"2px 8px",borderRadius:20,display:"inline-block",marginBottom:10,fontWeight:600}}>{esAdmin?"ADMIN":"EMPLEADO"}</div>
+        </div>}
         <nav style={{flex:1,padding:"12px 8px"}}>
           {NAV.map(n=>(
             <button key={n.id} onClick={()=>setScreen(n.id)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:"none",cursor:"pointer",marginBottom:2,background:screen===n.id?`${t.accent}25`:"transparent",color:screen===n.id?t.accent:t.sidebarText,fontWeight:screen===n.id?700:500,fontSize:13,textAlign:"left",transition:"all 0.15s"}}
@@ -864,7 +1299,7 @@ export default function App(){
         </nav>
         <div style={{padding:"12px 8px",borderTop:"1px solid #ffffff10"}}>
           <button onClick={()=>setDark(d=>!d)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:"none",cursor:"pointer",background:"transparent",color:t.sidebarText,fontSize:13,marginBottom:4}}><Icon name={dark?"sun":"moon"} size={18}/>{sideOpen&&<span>{dark?"Modo claro":"Modo oscuro"}</span>}</button>
-          <button onClick={()=>setLoggedIn(false)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:"none",cursor:"pointer",background:"transparent",color:"#ef4444",fontSize:13}}><Icon name="logout" size={18}/>{sideOpen&&<span>Cerrar sesión</span>}</button>
+          <button onClick={()=>{setLoggedIn(false);setUsuarioActual(null);setAllClients([]);setAllCreditos([]);setAllProductos([]);}} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:"none",cursor:"pointer",background:"transparent",color:"#ef4444",fontSize:13}}><Icon name="logout" size={18}/>{sideOpen&&<span>Cerrar sesión</span>}</button>
         </div>
       </div>
       <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
@@ -872,7 +1307,10 @@ export default function App(){
           <button onClick={()=>setSideOpen(o=>!o)} style={{background:"none",border:"none",cursor:"pointer",color:t.sub,padding:4,borderRadius:6}}><Icon name="menu" size={20}/></button>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
             {alertCount>0&&<div style={{display:"flex",alignItems:"center",gap:6,background:"#fef3c7",color:"#92400e",borderRadius:8,padding:"4px 10px",fontSize:12,fontWeight:600}}><Icon name="alert" size={14}/>{alertCount} alertas</div>}
-            <div style={{width:32,height:32,borderRadius:"50%",background:t.accent,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:700,fontSize:13}}>A</div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <div style={{width:32,height:32,borderRadius:"50%",background:t.accent,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:700,fontSize:13}}>{(usuarioActual?.nombre||"A")[0].toUpperCase()}</div>
+              {sideOpen&&<span style={{fontSize:12,color:t.sub}}>{usuarioActual?.nombre}</span>}
+            </div>
           </div>
         </header>
         <main style={{flex:1,padding:"26px",overflowY:"auto"}}>
@@ -882,6 +1320,7 @@ export default function App(){
           {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} clients={clients} t={t}/>}
           {screen==="cartera"&&<Cartera creditos={creditos} productos={productos} clients={clients} t={t}/>}
           {screen==="alertas"&&<Alertas creditos={creditos} clients={clients} t={t}/>}
+          {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t}/>}
         </main>
       </div>
     </div>

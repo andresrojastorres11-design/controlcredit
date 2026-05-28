@@ -21,9 +21,9 @@ const generarFechasCuotas=(fechaOtorg,frecuencia,cantCuotas)=>{if(!fechaOtorg||!
 const crearDetalleCuotas=(fechaOtorg,frecuencia,cantCuotas,valorCuota)=>{const fechas=generarFechasCuotas(fechaOtorg,frecuencia,cantCuotas);return fechas.map((fecha,i)=>({num:i+1,fechaVenc:fecha,montoPagado:0,estado:"Pendiente",fechaPago:null}));};
 
 // Helpers para convertir entre snake_case (Supabase) y camelCase (App)
-const clientFromDB=(r)=>({id:r.id,nombre:r.nombre,apellido:r.apellido,dni:r.dni||"",email:r.email||"",tel:r.tel||"",ciudad:r.ciudad||"",provincia:r.provincia||"",estado:r.estado||"Al día",score:r.score||75,sueldo:r.sueldo||"",ocupacion:r.ocupacion||"",empresa:r.empresa||"",estadoCivil:r.estado_civil||"",nacimiento:r.nacimiento||"",notas:r.notas||""});
-const creditoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,monto:r.monto,totalCobrar:r.total_cobrar,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,valorCuota:r.valor_cuota,saldoCobrado:r.saldo_cobrado||0,saldoPendiente:r.saldo_pendiente,frecuencia:r.frecuencia,fechaOtorg:r.fecha_otorg,proximoPago:r.proximo_pago,estado:r.estado,comentarios:r.comentarios||"",historial:r.historial||[],detalleCuotas:r.detalle_cuotas||[]});
-const productoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,producto:r.producto,inversion:r.inversion,precioFinanciado:r.precio_financiado,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,saldoCobrado:r.saldo_cobrado||0,valorCuota:r.valor_cuota,estado:r.estado,frecuencia:r.frecuencia});
+const clientFromDB=(r)=>({id:r.id,nombre:r.nombre,apellido:r.apellido,dni:r.dni||"",email:r.email||"",tel:r.tel||"",ciudad:r.ciudad||"",provincia:r.provincia||"",estado:r.estado||"Al día",score:r.score||75,sueldo:r.sueldo||"",ocupacion:r.ocupacion||"",empresa:r.empresa||"",estadoCivil:r.estado_civil||"",nacimiento:r.nacimiento||"",notas:r.notas||"",usuarioId:r.usuario_id||0});
+const creditoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,monto:r.monto,totalCobrar:r.total_cobrar,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,valorCuota:r.valor_cuota,saldoCobrado:r.saldo_cobrado||0,saldoPendiente:r.saldo_pendiente,frecuencia:r.frecuencia,fechaOtorg:r.fecha_otorg,proximoPago:r.proximo_pago,estado:r.estado,comentarios:r.comentarios||"",historial:r.historial||[],detalleCuotas:r.detalle_cuotas||[],usuarioId:r.usuario_id||0});
+const productoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,producto:r.producto,inversion:r.inversion,precioFinanciado:r.precio_financiado,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,saldoCobrado:r.saldo_cobrado||0,valorCuota:r.valor_cuota,estado:r.estado,frecuencia:r.frecuencia,usuarioId:r.usuario_id||0});
 
 // ── PDF ENGINE ────────────────────────────────────────────────────────────────
 const abrirPDF=(html,nombre)=>{
@@ -1135,7 +1135,7 @@ const Dashboard=({clients,creditos,productos,ventasContado=[],t})=>{
   );
 };
 
-const Clientes=({clients,setClients,creditos,setCreditos,productos,t})=>{
+const Clientes=({clients,setClients,creditos,setCreditos,productos,usuarioActual,t})=>{
   const [search,setSearch]=useState("");
   const [filtro,setFiltro]=useState("Todos");
   const [modal,setModal]=useState(false);
@@ -1150,7 +1150,7 @@ const Clientes=({clients,setClients,creditos,setCreditos,productos,t})=>{
   const save=async()=>{
     if(!form.nombre||!form.dni)return;
     setLoading(true);
-    const data={nombre:form.nombre,apellido:form.apellido,dni:form.dni,email:form.email,tel:form.tel,ciudad:form.ciudad,provincia:form.provincia,estado:form.estado,score:+form.score||75,sueldo:+form.sueldo||null,ocupacion:form.ocupacion,empresa:form.empresa,estado_civil:form.estadoCivil,nacimiento:form.nacimiento,notas:form.notas};
+    const data={nombre:form.nombre,apellido:form.apellido,dni:form.dni,email:form.email,tel:form.tel,ciudad:form.ciudad,provincia:form.provincia,estado:form.estado,score:+form.score||75,sueldo:+form.sueldo||null,ocupacion:form.ocupacion,empresa:form.empresa,estado_civil:form.estadoCivil,nacimiento:form.nacimiento,notas:form.notas,usuario_id:usuarioActual?.id||0};
     if(sel){
       const {data:updated}=await sb.from("clientes").update(data).eq("id",sel.id).select().single();
       if(updated)setClients(cs=>cs.map(c=>c.id===sel.id?clientFromDB(updated):c));
@@ -1241,7 +1241,7 @@ const Clientes=({clients,setClients,creditos,setCreditos,productos,t})=>{
 };
 
 // ── CRÉDITOS ──────────────────────────────────────────────────────────────────
-const Creditos=({creditos,setCreditos,clients,t})=>{
+const Creditos=({creditos,setCreditos,clients,usuarioActual,t})=>{
   const [search,setSearch]=useState("");
   const [filtroEst,setFiltroEst]=useState("Todos");
   const [modal,setModal]=useState(false);
@@ -1303,7 +1303,7 @@ const Creditos=({creditos,setCreditos,clients,t})=>{
     setLoading(true);
     const v=Math.round(+form.totalCobrar/+form.cuotas);
     const det=crearDetalleCuotas(form.fechaOtorg,form.frecuencia,+form.cuotas,v);
-    const data={cliente_id:+form.clienteId,cliente_nombre:`${client.nombre} ${client.apellido}`,monto:+form.monto,total_cobrar:+form.totalCobrar,ganancia:+form.totalCobrar-+form.monto,cuotas:+form.cuotas,cuotas_pagadas:0,valor_cuota:v,saldo_cobrado:0,saldo_pendiente:+form.totalCobrar,frecuencia:form.frecuencia,fecha_otorg:form.fechaOtorg,proximo_pago:det[0]?.fechaVenc||"",estado:form.estado,comentarios:form.comentarios,historial:[],detalle_cuotas:det};
+    const data={cliente_id:+form.clienteId,cliente_nombre:`${client.nombre} ${client.apellido}`,monto:+form.monto,total_cobrar:+form.totalCobrar,ganancia:+form.totalCobrar-+form.monto,cuotas:+form.cuotas,cuotas_pagadas:0,valor_cuota:v,saldo_cobrado:0,saldo_pendiente:+form.totalCobrar,frecuencia:form.frecuencia,fecha_otorg:form.fechaOtorg,proximo_pago:det[0]?.fechaVenc||"",estado:form.estado,comentarios:form.comentarios,historial:[],detalle_cuotas:det,usuario_id:usuarioActual?.id||0};
     const {data:created}=await sb.from("creditos").insert(data).select().single();
     if(created)setCreditos(cs=>[...cs,creditoFromDB(created)]);
     setLoading(false);setModal(false);
@@ -1449,7 +1449,7 @@ const Creditos=({creditos,setCreditos,clients,t})=>{
     </div>
   );
 };
-const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,t})=>{
+const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,usuarioActual,t})=>{
   const [modal,setModal]=useState(false);
   const [modalContado,setModalContado]=useState(false);
   const [tabActiva,setTabActiva]=useState("financiado");
@@ -1464,7 +1464,7 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
     if(!formC.producto||!formC.costo||!formC.precioVenta)return;
     setLoading(true);
     const ganancia=+formC.precioVenta-+formC.costo;
-    const data={producto:formC.producto,cliente_nombre:formC.clienteNombre,costo:+formC.costo,precio_venta:+formC.precioVenta,ganancia,fecha:formC.fecha,notas:formC.notas};
+    const data={producto:formC.producto,cliente_nombre:formC.clienteNombre,costo:+formC.costo,precio_venta:+formC.precioVenta,ganancia,fecha:formC.fecha,notas:formC.notas,usuario_id:usuarioActual?.id||0};
     const {data:created}=await sb.from("ventas_contado").insert(data).select().single();
     if(created)setVentasContado(vs=>[...vs,created]);
     setLoading(false);setModalContado(false);setFormC(EFC);
@@ -1479,7 +1479,7 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
     const client=clients.find(c=>c.id===+form.clienteId);
     setLoading(true);
     const vc=Math.round(+form.precioFinanciado/+form.cuotas);
-    const data={cliente_id:+form.clienteId,cliente_nombre:`${client.nombre} ${client.apellido}`,producto:form.producto,inversion:+form.inversion,precio_financiado:+form.precioFinanciado,ganancia:+form.precioFinanciado-+form.inversion,cuotas:+form.cuotas,cuotas_pagadas:0,saldo_cobrado:0,valor_cuota:vc,estado:form.estado,frecuencia:form.frecuencia};
+    const data={cliente_id:+form.clienteId,cliente_nombre:`${client.nombre} ${client.apellido}`,producto:form.producto,inversion:+form.inversion,precio_financiado:+form.precioFinanciado,ganancia:+form.precioFinanciado-+form.inversion,cuotas:+form.cuotas,cuotas_pagadas:0,saldo_cobrado:0,valor_cuota:vc,estado:form.estado,frecuencia:form.frecuencia,usuario_id:usuarioActual?.id||0};
     const {data:created}=await sb.from("productos").insert(data).select().single();
     if(created)setProductos(ps=>[...ps,productoFromDB(created)]);
     setLoading(false);setModal(false);
@@ -1741,40 +1741,59 @@ export default function App(){
   const t=dark?DARK:LIGHT;
 
   const esAdmin=usuarioActual?.rol==="admin"||usuarioActual?.user==="andres";
-  const clients=esAdmin?allClients:allClients.filter(c=>!c.usuarioId||c.usuarioId===usuarioActual?.id);
-  const creditos=esAdmin?allCreditos:allCreditos.filter(c=>!c.usuarioId||c.usuarioId===usuarioActual?.id);
-  const productos=esAdmin?allProductos:allProductos.filter(p=>!p.usuarioId||p.usuarioId===usuarioActual?.id);
+  // Admin ve todo. Empleado ve solo sus datos (usuario_id === su id)
+  const clients=esAdmin?allClients:allClients.filter(c=>c.usuarioId===usuarioActual?.id);
+  const creditos=esAdmin?allCreditos:allCreditos.filter(c=>c.usuarioId===usuarioActual?.id);
+  const productos=esAdmin?allProductos:allProductos.filter(p=>p.usuarioId===usuarioActual?.id);
+  const ventasContado=esAdmin?allVentasContado:allVentasContado.filter(v=>v.usuario_id===usuarioActual?.id);
   const setClients=(fn)=>setAllClients(fn);
   const setCreditos=(fn)=>setAllCreditos(fn);
   const setProductos=(fn)=>setAllProductos(fn);
-
-  const ventasContado=allVentasContado;
   const setVentasContado=(fn)=>setAllVentasContado(fn);
 
-  const cargarDatos=async()=>{
+  const cargarDatos=async(usuario)=>{
     setLoadingData(true);
-    const [{data:cls},{data:crs},{data:prds},{data:vcs}]=await Promise.all([
-      sb.from("clientes").select("*").order("id"),
-      sb.from("creditos").select("*").order("id"),
-      sb.from("productos").select("*").order("id"),
-      sb.from("ventas_contado").select("*").order("id"),
-    ]);
-    if(cls)setAllClients(cls.map(clientFromDB));
-    if(crs)setAllCreditos(crs.map(creditoFromDB));
-    if(prds)setAllProductos(prds.map(productoFromDB));
-    if(vcs)setAllVentasContado(vcs);
+    const esAdminLocal=usuario?.rol==="admin"||usuario?.user==="andres";
+    if(esAdminLocal){
+      // Admin carga todo
+      const [{data:cls},{data:crs},{data:prds},{data:vcs}]=await Promise.all([
+        sb.from("clientes").select("*").order("id"),
+        sb.from("creditos").select("*").order("id"),
+        sb.from("productos").select("*").order("id"),
+        sb.from("ventas_contado").select("*").order("id"),
+      ]);
+      if(cls)setAllClients(cls.map(clientFromDB));
+      if(crs)setAllCreditos(crs.map(creditoFromDB));
+      if(prds)setAllProductos(prds.map(productoFromDB));
+      if(vcs)setAllVentasContado(vcs);
+    } else {
+      // Empleado carga solo sus datos
+      const uid=usuario?.id;
+      const [{data:cls},{data:crs},{data:prds},{data:vcs}]=await Promise.all([
+        sb.from("clientes").select("*").eq("usuario_id",uid).order("id"),
+        sb.from("creditos").select("*").eq("usuario_id",uid).order("id"),
+        sb.from("productos").select("*").eq("usuario_id",uid).order("id"),
+        sb.from("ventas_contado").select("*").eq("usuario_id",uid).order("id"),
+      ]);
+      if(cls)setAllClients(cls.map(clientFromDB));
+      if(crs)setAllCreditos(crs.map(creditoFromDB));
+      if(prds)setAllProductos(prds.map(productoFromDB));
+      if(vcs)setAllVentasContado(vcs);
+    }
     setLoadingData(false);
   };
 
   const doLogin=async()=>{
     if(!loginForm.user||!loginForm.pass){setLoginErr("Completá usuario y contraseña");return;}
     if(loginForm.user==="andres"&&loginForm.pass==="Laliga2215"){
-      setUsuarioActual({id:0,nombre:"Andres",user:"andres",rol:"admin"});
-      setLoggedIn(true);setLoginErr("");cargarDatos();return;
+      const u={id:0,nombre:"Andres",user:"andres",rol:"admin"};
+      setUsuarioActual(u);setLoggedIn(true);setLoginErr("");cargarDatos(u);return;
     }
     const {data}=await sb.from("usuarios").select("*").eq("user_name",loginForm.user).eq("password",loginForm.pass).eq("activo",true).single();
-    if(data){setUsuarioActual(usuarioFromDB(data));setLoggedIn(true);setLoginErr("");cargarDatos();}
-    else setLoginErr("Usuario o contraseña incorrectos");
+    if(data){
+      const u=usuarioFromDB(data);
+      setUsuarioActual(u);setLoggedIn(true);setLoginErr("");cargarDatos(u);
+    } else setLoginErr("Usuario o contraseña incorrectos");
   };
 
   if(!loggedIn)return(
@@ -1847,9 +1866,9 @@ export default function App(){
         </header>
         <main style={{flex:1,padding:"26px",overflowY:"auto"}}>
           {screen==="dashboard"&&<Dashboard clients={clients} creditos={creditos} productos={productos} ventasContado={ventasContado} t={t}/>}
-          {screen==="clientes"&&<Clientes clients={clients} setClients={setClients} creditos={creditos} setCreditos={setCreditos} productos={productos} t={t}/>}
-          {screen==="creditos"&&<Creditos creditos={creditos} setCreditos={setCreditos} clients={clients} t={t}/>}
-          {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} t={t}/>}
+          {screen==="clientes"&&<Clientes clients={clients} setClients={setClients} creditos={creditos} setCreditos={setCreditos} productos={productos} usuarioActual={usuarioActual} t={t}/>}
+          {screen==="creditos"&&<Creditos creditos={creditos} setCreditos={setCreditos} clients={clients} usuarioActual={usuarioActual} t={t}/>}
+          {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} usuarioActual={usuarioActual} t={t}/>}
           {screen==="cartera"&&<Cartera creditos={creditos} productos={productos} clients={clients} t={t}/>}
           {screen==="alertas"&&<Alertas creditos={creditos} clients={clients} t={t}/>}
           {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t}/>}

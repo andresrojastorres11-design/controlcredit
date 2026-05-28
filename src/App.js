@@ -665,17 +665,20 @@ const AdminUsuarios=({t})=>{
     </div>
   );
 };
-const Dashboard=({clients,creditos,productos,t})=>{
+const Dashboard=({clients,creditos,productos,ventasContado=[],t})=>{
   const hoy=new Date();hoy.setHours(0,0,0,0);
   const [mesPDF,setMesPDF]=useState(hoy.getMonth()+1);
   const [anioPDF,setAnioPDF]=useState(hoy.getFullYear());
   const [tabPagos,setTabPagos]=useState("aldia");
+  const [editandoMeta,setEditandoMeta]=useState(false);
+  const [meta,setMeta]=useState({ganancia:"",clientes:""});
+  const [metaGuardada,setMetaGuardada]=useState({ganancia:0,clientes:0});
 
   const activos=creditos.filter(c=>c.estado!=="Finalizado");
   const plata=activos.reduce((s,c)=>s+(c.monto-c.monto*(c.cuotasPagadas/c.cuotas)),0);
   const porCobrar=activos.reduce((s,c)=>s+c.saldoPendiente,0);
   const ganEsp=creditos.reduce((s,c)=>s+c.ganancia,0);
-  const ganReal=creditos.reduce((s,c)=>s+(c.ganancia/c.cuotas)*c.cuotasPagadas,0);
+  const ganReal=creditos.reduce((s,c)=>s+(c.ganancia/c.cuotas)*c.cuotasPagadas,0)+(ventasContado||[]).reduce((s,v)=>s+v.ganancia,0);
   const nMorosos=clients.filter(c=>c.estado==="Moroso").length;
   const nAlDia=clients.filter(c=>c.estado==="Al día"||c.estado==="Premium").length;
   const alertas=creditos.filter(c=>c.estado==="Moroso"||c.estado==="Atrasado");
@@ -699,7 +702,29 @@ const Dashboard=({clients,creditos,productos,t})=>{
   // Moroso: más de 15 días sin pagar
   // Un cliente aparece UNA SOLA VEZ aunque tenga varias cuotas vencidas
   // Si ya pagó todas las cuotas del período → no aparece
-  const [clienteExpandido,setClienteExpandido]=useState(null);
+  const [mensajeEditando,setMensajeEditando]=useState(null); // clienteId del que está editando
+  const [mensajeTexto,setMensajeTexto]=useState({});
+  const getMensaje=(c,clienteInfo)=>{
+    const nombre=clienteInfo?.nombre||c.clienteNombre?.split(" ")[0]||"cliente";
+    if(mensajeTexto[c.clienteId]!==undefined)return mensajeTexto[c.clienteId];
+    return `Hola ${nombre}, ¿cómo estás? Te escribía el día de hoy por el pago pactado.`;
+  };
+  const abrirMensaje=(c,clienteInfo,e)=>{
+    e.stopPropagation();
+    if(mensajeEditando===c.clienteId){setMensajeEditando(null);return;}
+    if(mensajeTexto[c.clienteId]===undefined){
+      const nombre=clienteInfo?.nombre||c.clienteNombre?.split(" ")[0]||"cliente";
+      setMensajeTexto(m=>({...m,[c.clienteId]:`Hola ${nombre}, ¿cómo estás? Te escribía el día de hoy por el pago pactado.`}));
+    }
+    setMensajeEditando(c.clienteId);
+  };
+  const enviarWA=(tel,mensaje,e)=>{
+    e.stopPropagation();
+    const num=`54${tel.replace(/\D/g,"")}`;
+    const txt=encodeURIComponent(mensaje);
+    window.open(`https://wa.me/${num}?text=${txt}`,"_blank");
+    setMensajeEditando(null);
+  };
 
   const itemsPagosRaw=activos.map(c=>{
     const det=c.detalleCuotas||[];
@@ -773,6 +798,114 @@ const Dashboard=({clients,creditos,productos,t})=>{
         <MetricCard label="Morosos" value={nMorosos} icon="alert" color="#ef4444" t={t}/>
         <MetricCard label="Créditos activos" value={activos.length} icon="creditos" color="#3b82f6" t={t}/>
         <MetricCard label="Prod. activos" value={productos.filter(p=>p.estado==="Activo").length} icon="productos" color="#10b981" t={t}/>
+      </div>
+
+      {/* ── METAS ── */}
+      <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"20px 24px",marginBottom:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <div>
+            <h3 style={{margin:"0 0 3px",fontSize:16,fontWeight:800,color:t.text}}>🎯 Mis Metas</h3>
+            <p style={{margin:0,fontSize:12,color:t.sub}}>Seguí tu progreso hacia tus objetivos</p>
+          </div>
+          <button onClick={()=>setEditandoMeta(e=>!e)} style={{background:editandoMeta?t.accent:"none",border:`1px solid ${t.accent}`,color:editandoMeta?"#fff":t.accent,borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
+            <Icon name="edit" size={13}/>{editandoMeta?"Cerrar":"Editar metas"}
+          </button>
+        </div>
+
+        {editandoMeta&&(
+          <div style={{background:t.bg,borderRadius:10,padding:"16px 18px",marginBottom:16,display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <div>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:5,textTransform:"uppercase"}}>Meta de ganancia ($)</label>
+              <input type="number" value={meta.ganancia} onChange={e=>setMeta(m=>({...m,ganancia:e.target.value}))} placeholder="Ej: 3000000" style={{width:"100%",padding:"9px 12px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:5,textTransform:"uppercase"}}>Meta de nuevos clientes</label>
+              <input type="number" value={meta.clientes} onChange={e=>setMeta(m=>({...m,clientes:e.target.value}))} placeholder="Ej: 10" style={{width:"100%",padding:"9px 12px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+            <div style={{gridColumn:"1/-1",display:"flex",justifyContent:"flex-end",gap:8}}>
+              <button onClick={()=>setEditandoMeta(false)} style={{padding:"8px 16px",borderRadius:8,border:`1px solid ${t.border}`,background:"none",color:t.sub,cursor:"pointer",fontWeight:600,fontSize:12}}>Cancelar</button>
+              <button onClick={()=>{setMetaGuardada({ganancia:+meta.ganancia||0,clientes:+meta.clientes||0});setEditandoMeta(false);}} style={{padding:"8px 16px",borderRadius:8,border:"none",background:t.accent,color:"#fff",cursor:"pointer",fontWeight:700,fontSize:12}}>Guardar metas</button>
+            </div>
+          </div>
+        )}
+
+        {metaGuardada.ganancia===0&&metaGuardada.clientes===0?(
+          <div style={{textAlign:"center",padding:"20px 0",color:t.sub}}>
+            <div style={{fontSize:28,marginBottom:8}}>🎯</div>
+            <div style={{fontSize:13,color:t.sub}}>Tocá <strong style={{color:t.accent}}>"Editar metas"</strong> para definir tus objetivos de ganancia y clientes</div>
+          </div>
+        ):(
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+            {/* META GANANCIA */}
+            {metaGuardada.ganancia>0&&(()=>{
+              const actual=ganReal;
+              const pct=Math.min(100,Math.round((actual/metaGuardada.ganancia)*100));
+              const falta=Math.max(0,metaGuardada.ganancia-actual);
+              const color=pct>=100?"#10b981":pct>=50?"#3b82f6":"#f59e0b";
+              return(
+                <div style={{background:t.bg,borderRadius:12,padding:"18px 20px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                    <div>
+                      <div style={{fontSize:11,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Meta de ganancia</div>
+                      <div style={{fontSize:20,fontWeight:900,color:t.text}}>{fmt(metaGuardada.ganancia)}</div>
+                    </div>
+                    <div style={{width:48,height:48,borderRadius:"50%",background:`${color}20`,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column"}}>
+                      <div style={{fontSize:13,fontWeight:900,color}}>{pct}%</div>
+                    </div>
+                  </div>
+                  <div style={{marginBottom:10}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:5,fontSize:11}}>
+                      <span style={{color:t.sub}}>Ganado: <strong style={{color}}>{fmt(actual)}</strong></span>
+                      <span style={{color:t.sub}}>Falta: <strong style={{color:"#ef4444"}}>{fmt(falta)}</strong></span>
+                    </div>
+                    <div style={{height:12,borderRadius:6,background:t.border,overflow:"hidden"}}>
+                      <div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${color},${color}cc)`,borderRadius:6,transition:"width 0.7s"}}/>
+                    </div>
+                  </div>
+                  {pct>=100?(
+                    <div style={{fontSize:12,color:"#10b981",fontWeight:700,textAlign:"center"}}>🎉 ¡Meta cumplida!</div>
+                  ):(
+                    <div style={{fontSize:11,color:t.sub,textAlign:"center"}}>Te faltan <strong style={{color:t.text}}>{fmt(falta)}</strong> para llegar</div>
+                  )}
+                </div>
+              );
+            })()}
+            {/* META CLIENTES */}
+            {metaGuardada.clientes>0&&(()=>{
+              const actual=clients.length;
+              const pct=Math.min(100,Math.round((actual/metaGuardada.clientes)*100));
+              const falta=Math.max(0,metaGuardada.clientes-actual);
+              const color=pct>=100?"#10b981":pct>=50?"#8b5cf6":"#f59e0b";
+              return(
+                <div style={{background:t.bg,borderRadius:12,padding:"18px 20px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                    <div>
+                      <div style={{fontSize:11,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Meta de clientes</div>
+                      <div style={{fontSize:20,fontWeight:900,color:t.text}}>{metaGuardada.clientes} clientes</div>
+                    </div>
+                    <div style={{width:48,height:48,borderRadius:"50%",background:`${color}20`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                      <div style={{fontSize:13,fontWeight:900,color}}>{pct}%</div>
+                    </div>
+                  </div>
+                  <div style={{marginBottom:10}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:5,fontSize:11}}>
+                      <span style={{color:t.sub}}>Actuales: <strong style={{color}}>{actual}</strong></span>
+                      <span style={{color:t.sub}}>Falta: <strong style={{color:"#ef4444"}}>{falta}</strong></span>
+                    </div>
+                    <div style={{height:12,borderRadius:6,background:t.border,overflow:"hidden"}}>
+                      <div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${color},${color}cc)`,borderRadius:6,transition:"width 0.7s"}}/>
+                    </div>
+                  </div>
+                  {pct>=100?(
+                    <div style={{fontSize:12,color:"#10b981",fontWeight:700,textAlign:"center"}}>🎉 ¡Meta cumplida!</div>
+                  ):(
+                    <div style={{fontSize:11,color:t.sub,textAlign:"center"}}>Te faltan <strong style={{color:t.text}}>{falta} cliente{falta!==1?"s":""}</strong> para llegar</div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        )}
       </div>
 
       {/* FLUJO DE EFECTIVO */}
@@ -865,13 +998,43 @@ const Dashboard=({clients,creditos,productos,t})=>{
                           </div>
                         </div>
                         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                          {clienteInfo?.tel&&<a href={`https://wa.me/54${clienteInfo.tel.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:5,background:"#25D366",color:"#fff",borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:700,textDecoration:"none"}}><Icon name="whatsapp" size={13}/>WA</a>}
+                          {clienteInfo?.tel&&(
+                            <button onClick={e=>abrirMensaje(c,clienteInfo,e)}
+                              style={{display:"flex",alignItems:"center",gap:5,background:"#25D366",color:"#fff",borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer"}}>
+                              <Icon name="whatsapp" size={13}/>{mensajeEditando===c.clienteId?"Cerrar":"Enviar WA"}
+                            </button>
+                          )}
                           <div style={{color:t.sub,fontSize:11,textAlign:"right"}}>
                             <div>{c.cuotasPagadas}/{c.cuotas} cuotas</div>
                             <div style={{color:tabActiva.color}}>{abierto?"▲ Ocultar":"▼ Ver cuotas"}</div>
                           </div>
                         </div>
                       </div>
+                      {/* Panel de mensaje editable */}
+                      {mensajeEditando===c.clienteId&&clienteInfo?.tel&&(
+                        <div onClick={e=>e.stopPropagation()} style={{background:t.card,borderTop:`2px solid #25D366`,padding:"14px 16px"}}>
+                          <div style={{fontSize:11,fontWeight:700,color:"#25D366",textTransform:"uppercase",marginBottom:8}}>✏️ Editá el mensaje antes de enviar</div>
+                          <textarea
+                            value={getMensaje(c,clienteInfo)}
+                            onChange={e=>setMensajeTexto(m=>({...m,[c.clienteId]:e.target.value}))}
+                            rows={4}
+                            style={{width:"100%",padding:"10px 12px",borderRadius:8,border:`1px solid #25D36640`,background:t.bg,color:t.text,fontSize:13,outline:"none",boxSizing:"border-box",resize:"vertical",lineHeight:1.5}}
+                          />
+                          <div style={{display:"flex",gap:8,marginTop:10,justifyContent:"space-between",alignItems:"center"}}>
+                            <button onClick={e=>{e.stopPropagation();const nombre=clienteInfo?.nombre||c.clienteNombre?.split(" ")[0]||"cliente";setMensajeTexto(m=>({...m,[c.clienteId]:`Hola ${nombre}, ¿cómo estás? Te escribía el día de hoy por el pago pactado.`}));}}
+                              style={{fontSize:11,color:t.sub,background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>
+                              Restablecer mensaje
+                            </button>
+                            <div style={{display:"flex",gap:8}}>
+                              <button onClick={e=>{e.stopPropagation();setMensajeEditando(null);}} style={{padding:"8px 14px",borderRadius:8,border:`1px solid ${t.border}`,background:"none",color:t.sub,cursor:"pointer",fontSize:12,fontWeight:600}}>Cancelar</button>
+                              <button onClick={e=>enviarWA(clienteInfo.tel,getMensaje(c,clienteInfo),e)}
+                                style={{display:"flex",alignItems:"center",gap:6,padding:"8px 16px",borderRadius:8,border:"none",background:"#25D366",color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                                <Icon name="whatsapp" size={14}/>Abrir WhatsApp
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       {abierto&&(
                         <div style={{background:t.card,borderTop:`1px solid ${tabActiva.border}`,padding:"14px 16px"}}>
                           <div style={{fontSize:11,fontWeight:700,color:t.sub,textTransform:"uppercase",marginBottom:10}}>Cuotas del crédito</div>
@@ -1235,12 +1398,30 @@ const Creditos=({creditos,setCreditos,clients,t})=>{
     </div>
   );
 };
-const Productos=({productos,setProductos,clients,t})=>{
+const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,t})=>{
   const [modal,setModal]=useState(false);
+  const [modalContado,setModalContado]=useState(false);
+  const [tabActiva,setTabActiva]=useState("financiado");
   const [loading,setLoading]=useState(false);
   const EF={clienteId:"",producto:"",inversion:"",precioFinanciado:"",cuotas:"",frecuencia:"Mensual",estado:"Activo"};
   const [form,setForm]=useState(EF);
+  const EFC={producto:"",clienteNombre:"",costo:"",precioVenta:"",fecha:new Date().toISOString().slice(0,10),notas:""};
+  const [formC,setFormC]=useState(EFC);
   const clienteOpts=[{value:"",label:"— Seleccionar cliente —"},...clients.map(c=>({value:c.id,label:`${c.nombre} ${c.apellido}`}))];
+
+  const saveContado=async()=>{
+    if(!formC.producto||!formC.costo||!formC.precioVenta)return;
+    setLoading(true);
+    const ganancia=+formC.precioVenta-+formC.costo;
+    const data={producto:formC.producto,cliente_nombre:formC.clienteNombre,costo:+formC.costo,precio_venta:+formC.precioVenta,ganancia,fecha:formC.fecha,notas:formC.notas};
+    const {data:created}=await sb.from("ventas_contado").insert(data).select().single();
+    if(created)setVentasContado(vs=>[...vs,created]);
+    setLoading(false);setModalContado(false);setFormC(EFC);
+  };
+
+  const delContado=async(id)=>{
+    if(confirm("¿Eliminar esta venta?")){ await sb.from("ventas_contado").delete().eq("id",id); setVentasContado(vs=>vs.filter(v=>v.id!==id)); }
+  };
 
   const save=async()=>{
     if(!form.clienteId||!form.producto||!form.inversion||!form.cuotas)return;
@@ -1260,13 +1441,32 @@ const Productos=({productos,setProductos,clients,t})=>{
     }
   };
 
+  const gananciaContado=ventasContado.reduce((s,v)=>s+v.ganancia,0);
+
   return(
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-        <div><h1 style={{fontSize:22,fontWeight:800,color:t.text,margin:"0 0 2px"}}>Venta Financiada</h1><p style={{color:t.sub,margin:0,fontSize:13}}>{productos.filter(p=>p.estado==="Activo").length} activos</p></div>
-        <button onClick={()=>{setForm(EF);setModal(true);}} style={{background:t.accent,color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Icon name="plus" size={15}/>Nueva venta</button>
+      {/* HEADER CON TABS */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+        <div><h1 style={{fontSize:22,fontWeight:800,color:t.text,margin:"0 0 2px"}}>Productos</h1><p style={{color:t.sub,margin:0,fontSize:13}}>{productos.filter(p=>p.estado==="Activo").length} financiados · {ventasContado.length} contado</p></div>
+        <div style={{display:"flex",gap:8}}>
+          {tabActiva==="financiado"?<button onClick={()=>{setForm(EF);setModal(true);}} style={{background:t.accent,color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Icon name="plus" size={15}/>Nueva venta financiada</button>
+          :<button onClick={()=>{setFormC(EFC);setModalContado(true);}} style={{background:"#10b981",color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Icon name="plus" size={15}/>Nueva venta contado</button>}
+        </div>
       </div>
-      {productos.length===0?<div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"60px",textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>🛒</div><div style={{fontSize:15,fontWeight:700,color:t.text,marginBottom:6}}>No hay ventas todavía</div><button onClick={()=>{setForm(EF);setModal(true);}} style={{background:t.accent,color:"#fff",border:"none",borderRadius:10,padding:"10px 20px",fontWeight:700,cursor:"pointer",marginTop:10}}>+ Nueva venta</button></div>:(
+
+      {/* TABS */}
+      <div style={{display:"flex",gap:0,borderBottom:`1px solid ${t.border}`,marginBottom:20}}>
+        {[{id:"financiado",label:"💳 Venta Financiada",color:"#3b82f6"},{id:"contado",label:"💵 Venta de Contado",color:"#10b981"}].map(tab=>(
+          <button key={tab.id} onClick={()=>setTabActiva(tab.id)}
+            style={{padding:"10px 22px",border:"none",borderBottom:tabActiva===tab.id?`3px solid ${tab.color}`:"3px solid transparent",background:"transparent",cursor:"pointer",fontWeight:tabActiva===tab.id?700:500,fontSize:13,color:tabActiva===tab.id?tab.color:t.sub,transition:"all 0.15s"}}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* VENTA FINANCIADA */}
+      {tabActiva==="financiado"&&(
+        productos.length===0?<div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"60px",textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>🛒</div><div style={{fontSize:15,fontWeight:700,color:t.text,marginBottom:6}}>No hay ventas financiadas</div><button onClick={()=>{setForm(EF);setModal(true);}} style={{background:t.accent,color:"#fff",border:"none",borderRadius:10,padding:"10px 20px",fontWeight:700,cursor:"pointer",marginTop:10}}>+ Nueva venta</button></div>:(
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:16}}>
           {productos.map(p=>{
             const restantes=p.cuotas-p.cuotasPagadas;
@@ -1292,7 +1492,53 @@ const Productos=({productos,setProductos,clients,t})=>{
             );
           })}
         </div>
+      ))}
+
+      {/* VENTA DE CONTADO */}
+      {tabActiva==="contado"&&(
+        <div>
+          {/* Resumen ganancia contado */}
+          {ventasContado.length>0&&(
+            <div style={{background:"#10b98115",border:"1px solid #10b98130",borderRadius:12,padding:"14px 18px",marginBottom:16,display:"flex",gap:24,alignItems:"center"}}>
+              <div><div style={{fontSize:10,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Total ventas contado</div><div style={{fontSize:18,fontWeight:800,color:t.text}}>{ventasContado.length}</div></div>
+              <div><div style={{fontSize:10,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Ganancia total contado</div><div style={{fontSize:18,fontWeight:800,color:"#10b981"}}>{fmt(gananciaContado)}</div></div>
+              <div><div style={{fontSize:10,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Inversión total</div><div style={{fontSize:18,fontWeight:800,color:t.text}}>{fmt(ventasContado.reduce((s,v)=>s+v.costo,0))}</div></div>
+            </div>
+          )}
+          {ventasContado.length===0?(
+            <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"60px",textAlign:"center"}}>
+              <div style={{fontSize:40,marginBottom:12}}>💵</div>
+              <div style={{fontSize:15,fontWeight:700,color:t.text,marginBottom:6}}>No hay ventas de contado</div>
+              <button onClick={()=>{setFormC(EFC);setModalContado(true);}} style={{background:"#10b981",color:"#fff",border:"none",borderRadius:10,padding:"10px 20px",fontWeight:700,cursor:"pointer",marginTop:10}}>+ Nueva venta contado</button>
+            </div>
+          ):(
+            <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:"hidden"}}>
+              <table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead><tr style={{background:t.bg}}>{["Producto","Cliente","Costo","Precio venta","Ganancia","Rentab.","Fecha",""].map(h=><th key={h} style={{padding:"11px 15px",textAlign:"left",fontSize:11,fontWeight:700,color:t.sub,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {ventasContado.map(v=>{
+                    const rent=v.costo>0?Math.round((v.ganancia/v.costo)*100):0;
+                    return(
+                      <tr key={v.id} style={{borderTop:`1px solid ${t.border}`}}>
+                        <td style={{padding:"12px 15px",fontWeight:700,color:t.text}}>{v.producto}</td>
+                        <td style={{padding:"12px 15px",color:t.sub,fontSize:13}}>{v.cliente_nombre||"—"}</td>
+                        <td style={{padding:"12px 15px",color:t.text,fontSize:13}}>{fmt(v.costo)}</td>
+                        <td style={{padding:"12px 15px",color:t.text,fontSize:13,fontWeight:700}}>{fmt(v.precio_venta)}</td>
+                        <td style={{padding:"12px 15px",color:"#10b981",fontSize:13,fontWeight:800}}>{fmt(v.ganancia)}</td>
+                        <td style={{padding:"12px 15px"}}><span style={{background:"#8b5cf620",color:"#8b5cf6",padding:"2px 8px",borderRadius:20,fontSize:12,fontWeight:700}}>{rent}%</span></td>
+                        <td style={{padding:"12px 15px",color:t.sub,fontSize:12}}>{fmtFecha(v.fecha)}</td>
+                        <td style={{padding:"12px 15px"}}><button onClick={()=>delContado(v.id)} style={{background:"none",border:"1px solid #fca5a5",borderRadius:6,padding:"5px 8px",cursor:"pointer",color:"#ef4444"}}><Icon name="trash" size={13}/></button></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       )}
+
+      {/* MODAL NUEVA VENTA FINANCIADA */}
       <Modal open={modal} onClose={()=>setModal(false)} title="Nueva venta financiada" t={t}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
           <div style={{gridColumn:"1/-1"}}><Field label="Cliente *" value={form.clienteId} onChange={v=>setForm(f=>({...f,clienteId:v}))} options={clienteOpts} t={t}/></div>
@@ -1313,11 +1559,30 @@ const Productos=({productos,setProductos,clients,t})=>{
           <button onClick={save} disabled={loading} style={{padding:"9px 18px",borderRadius:8,border:"none",background:t.accent,color:"#fff",cursor:"pointer",fontWeight:700,opacity:loading?0.7:1}}>{loading?"Guardando...":"Crear venta"}</button>
         </div>
       </Modal>
+      {/* MODAL NUEVA VENTA CONTADO */}
+      <Modal open={modalContado} onClose={()=>setModalContado(false)} title="Nueva venta de contado" t={t}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
+          <div style={{gridColumn:"1/-1"}}><Field label="Producto *" value={formC.producto} onChange={v=>setFormC(f=>({...f,producto:v}))} t={t} placeholder="Ej: iPhone 14, Heladera Samsung..."/></div>
+          <div style={{gridColumn:"1/-1"}}><Field label="Nombre del cliente (opcional)" value={formC.clienteNombre} onChange={v=>setFormC(f=>({...f,clienteNombre:v}))} t={t}/></div>
+          <Field label="Costo / lo que pagaste ($) *" value={formC.costo} onChange={v=>setFormC(f=>({...f,costo:v}))} type="number" t={t}/>
+          <Field label="Precio de venta ($) *" value={formC.precioVenta} onChange={v=>setFormC(f=>({...f,precioVenta:v}))} type="number" t={t}/>
+          <Field label="Fecha de venta" value={formC.fecha} onChange={v=>setFormC(f=>({...f,fecha:v}))} type="date" t={t}/>
+        </div>
+        {formC.costo&&formC.precioVenta&&(
+          <div style={{background:t.bg,borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",gap:20,fontSize:12}}>
+            <span>Ganancia: <strong style={{color:"#10b981",fontSize:15}}>{fmt(+formC.precioVenta-+formC.costo)}</strong></span>
+            <span>Rentabilidad: <strong style={{color:"#8b5cf6"}}>{Math.round(((+formC.precioVenta-+formC.costo)/(+formC.costo||1))*100)}%</strong></span>
+          </div>
+        )}
+        <Field label="Notas" value={formC.notas} onChange={v=>setFormC(f=>({...f,notas:v}))} t={t}/>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <button onClick={()=>setModalContado(false)} style={{padding:"9px 18px",borderRadius:8,border:`1px solid ${t.border}`,background:"none",color:t.sub,cursor:"pointer",fontWeight:600}}>Cancelar</button>
+          <button onClick={saveContado} disabled={loading} style={{padding:"9px 18px",borderRadius:8,border:"none",background:"#10b981",color:"#fff",cursor:"pointer",fontWeight:700,opacity:loading?0.7:1}}>{loading?"Guardando...":"Registrar venta"}</button>
+        </div>
+      </Modal>
     </div>
   );
 };
-
-// ── CARTERA ───────────────────────────────────────────────────────────────────
 const Cartera=({creditos,productos,clients,t})=>{
   const creditosActivos=creditos.filter(c=>c.estado!=="Finalizado");
   const plata=creditosActivos.reduce((s,c)=>s+(c.monto-c.monto*(c.cuotasPagadas/c.cuotas)),0);
@@ -1414,6 +1679,7 @@ export default function App(){
   const [allClients,setAllClients]=useState([]);
   const [allCreditos,setAllCreditos]=useState([]);
   const [allProductos,setAllProductos]=useState([]);
+  const [allVentasContado,setAllVentasContado]=useState([]);
   const [sideOpen,setSideOpen]=useState(true);
   const [loggedIn,setLoggedIn]=useState(false);
   const [usuarioActual,setUsuarioActual]=useState(null);
@@ -1430,16 +1696,21 @@ export default function App(){
   const setCreditos=(fn)=>setAllCreditos(fn);
   const setProductos=(fn)=>setAllProductos(fn);
 
+  const ventasContado=allVentasContado;
+  const setVentasContado=(fn)=>setAllVentasContado(fn);
+
   const cargarDatos=async()=>{
     setLoadingData(true);
-    const [{data:cls},{data:crs},{data:prds}]=await Promise.all([
+    const [{data:cls},{data:crs},{data:prds},{data:vcs}]=await Promise.all([
       sb.from("clientes").select("*").order("id"),
       sb.from("creditos").select("*").order("id"),
       sb.from("productos").select("*").order("id"),
+      sb.from("ventas_contado").select("*").order("id"),
     ]);
     if(cls)setAllClients(cls.map(clientFromDB));
     if(crs)setAllCreditos(crs.map(creditoFromDB));
     if(prds)setAllProductos(prds.map(productoFromDB));
+    if(vcs)setAllVentasContado(vcs);
     setLoadingData(false);
   };
 
@@ -1523,10 +1794,10 @@ export default function App(){
           </div>
         </header>
         <main style={{flex:1,padding:"26px",overflowY:"auto"}}>
-          {screen==="dashboard"&&<Dashboard clients={clients} creditos={creditos} productos={productos} t={t}/>}
+          {screen==="dashboard"&&<Dashboard clients={clients} creditos={creditos} productos={productos} ventasContado={ventasContado} t={t}/>}
           {screen==="clientes"&&<Clientes clients={clients} setClients={setClients} creditos={creditos} setCreditos={setCreditos} productos={productos} t={t}/>}
           {screen==="creditos"&&<Creditos creditos={creditos} setCreditos={setCreditos} clients={clients} t={t}/>}
-          {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} clients={clients} t={t}/>}
+          {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} t={t}/>}
           {screen==="cartera"&&<Cartera creditos={creditos} productos={productos} clients={clients} t={t}/>}
           {screen==="alertas"&&<Alertas creditos={creditos} clients={clients} t={t}/>}
           {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t}/>}

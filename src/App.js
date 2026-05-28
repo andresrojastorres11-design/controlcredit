@@ -976,14 +976,57 @@ const Creditos=({creditos,setCreditos,clients,t})=>{
   const [search,setSearch]=useState("");
   const [filtroEst,setFiltroEst]=useState("Todos");
   const [modal,setModal]=useState(false);
+  const [editModal,setEditModal]=useState(false);
+  const [creditoEditando,setCreditoEditando]=useState(null);
   const [expandido,setExpandido]=useState(null);
   const [loading,setLoading]=useState(false);
   const EF={clienteId:"",monto:"",totalCobrar:"",cuotas:"",frecuencia:"Mensual",fechaOtorg:new Date().toISOString().slice(0,10),estado:"Al día",comentarios:""};
   const [form,setForm]=useState(EF);
+  const [formEdit,setFormEdit]=useState({monto:"",totalCobrar:"",cuotas:"",frecuencia:"Mensual",estado:"Al día",comentarios:""});
   const filtered=creditos.filter(c=>{const q=search.toLowerCase();return(c.clienteNombre.toLowerCase().includes(q)||c.estado.toLowerCase().includes(q))&&(filtroEst==="Todos"||c.estado===filtroEst);});
   const vc=form.cuotas&&form.totalCobrar?Math.round(+form.totalCobrar/+form.cuotas):0;
   const gan=form.monto&&form.totalCobrar?+form.totalCobrar-+form.monto:0;
   const prox=generarFechasCuotas(form.fechaOtorg,form.frecuencia,1)[0]||"";
+
+  const abrirEdicion=(c)=>{
+    setCreditoEditando(c);
+    setFormEdit({monto:c.monto,totalCobrar:c.totalCobrar,cuotas:c.cuotas,frecuencia:c.frecuencia,estado:c.estado,comentarios:c.comentarios||""});
+    setEditModal(true);
+  };
+
+  const guardarEdicion=async()=>{
+    if(!creditoEditando)return;
+    setLoading(true);
+    const nuevoVC=Math.round(+formEdit.totalCobrar/+formEdit.cuotas);
+    const nuevaGanancia=+formEdit.totalCobrar-+formEdit.monto;
+    // Recalcular saldo pendiente manteniendo lo ya cobrado
+    const nuevoPendiente=Math.max(0,+formEdit.totalCobrar-creditoEditando.saldoCobrado);
+    // Regenerar cuotas si cambiaron cantidad o frecuencia
+    const cambioEstructura=+formEdit.cuotas!==creditoEditando.cuotas||formEdit.frecuencia!==creditoEditando.frecuencia;
+    let nuevasDet=creditoEditando.detalleCuotas||[];
+    if(cambioEstructura){
+      nuevasDet=crearDetalleCuotas(creditoEditando.fechaOtorg,formEdit.frecuencia,+formEdit.cuotas,nuevoVC);
+      // Marcar cuotas ya pagadas
+      for(let i=0;i<Math.min(creditoEditando.cuotasPagadas,nuevasDet.length);i++){
+        nuevasDet[i]={...nuevasDet[i],estado:"Pagada",montoPagado:nuevoVC,fechaPago:new Date().toLocaleDateString("es-AR")};
+      }
+    } else {
+      // Solo actualizar valor cuota en las pendientes
+      nuevasDet=nuevasDet.map(d=>d.estado==="Pendiente"?{...d,valorCuotaEditado:undefined}:d);
+    }
+    const proxPendiente=nuevasDet.find(d=>d.estado!=="Pagada");
+    const data={
+      monto:+formEdit.monto,total_cobrar:+formEdit.totalCobrar,ganancia:nuevaGanancia,
+      cuotas:+formEdit.cuotas,valor_cuota:nuevoVC,saldo_pendiente:nuevoPendiente,
+      frecuencia:formEdit.frecuencia,estado:formEdit.estado,comentarios:formEdit.comentarios,
+      proximo_pago:proxPendiente?.fechaVenc||creditoEditando.proximoPago,
+      detalle_cuotas:nuevasDet,
+      historial:[...creditoEditando.historial,{tipo:"edicion_credito",fecha:new Date().toLocaleDateString("es-AR"),cambios:`Monto: ${fmt(+formEdit.monto)}, Total: ${fmt(+formEdit.totalCobrar)}, Cuotas: ${formEdit.cuotas}`}]
+    };
+    await sb.from("creditos").update(data).eq("id",creditoEditando.id);
+    setCreditos(cs=>cs.map(c=>c.id===creditoEditando.id?{...c,...creditoFromDB({...c,...{id:c.id,cliente_id:c.clienteId,cliente_nombre:c.clienteNombre,monto:+formEdit.monto,total_cobrar:+formEdit.totalCobrar,ganancia:nuevaGanancia,cuotas:+formEdit.cuotas,cuotas_pagadas:c.cuotasPagadas,valor_cuota:nuevoVC,saldo_cobrado:c.saldoCobrado,saldo_pendiente:nuevoPendiente,frecuencia:formEdit.frecuencia,fecha_otorg:c.fechaOtorg,proximo_pago:proxPendiente?.fechaVenc||c.proximoPago,estado:formEdit.estado,comentarios:formEdit.comentarios,historial:data.historial,detalle_cuotas:nuevasDet}})}:c));
+    setLoading(false);setEditModal(false);setCreditoEditando(null);
+  };
 
   const save=async()=>{
     if(!form.clienteId||!form.monto||!form.totalCobrar||!form.cuotas)return;
@@ -1046,6 +1089,7 @@ const Creditos=({creditos,setCreditos,clients,t})=>{
                     </div>
                     <div style={{display:"flex",gap:7,flexWrap:"wrap",alignItems:"center"}}>
                       <button onClick={()=>setExpandido(exp?null:c.id)} style={{background:exp?t.accent:"none",border:`1px solid ${t.accent}`,color:exp?"#fff":t.accent,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><Icon name="calendar" size={13}/>{exp?"Ocultar":"Ver cuotas"}</button>
+                      <button onClick={()=>abrirEdicion(c)} style={{background:"none",border:`1px solid ${t.border}`,color:t.sub,borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:3}} title="Editar crédito"><Icon name="edit" size={13}/></button>
                       <button onClick={()=>generatePDF(c)} style={{background:"none",border:`1px solid ${t.border}`,color:t.sub,borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}><Icon name="pdf" size={13}/></button>
                       <button onClick={()=>eliminar(c.id)} style={{background:"none",border:"1px solid #fca5a5",color:"#ef4444",borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center"}}><Icon name="trash" size={13}/></button>
                     </div>
@@ -1098,11 +1142,41 @@ const Creditos=({creditos,setCreditos,clients,t})=>{
           <button onClick={save} disabled={loading} style={{padding:"9px 18px",borderRadius:8,border:"none",background:t.accent,color:"#fff",cursor:"pointer",fontWeight:700,opacity:loading?0.7:1}}>{loading?"Guardando...":"Crear crédito"}</button>
         </div>
       </Modal>
+
+      {/* MODAL EDITAR CRÉDITO */}
+      <Modal open={editModal} onClose={()=>setEditModal(false)} title={`Editar crédito — ${creditoEditando?.clienteNombre}`} t={t}>
+        {creditoEditando&&(
+          <div>
+            <div style={{background:t.bg,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,color:t.sub}}>
+              Ya cobrado: <strong style={{color:t.accent2}}>{fmt(creditoEditando.saldoCobrado)}</strong> — 
+              Cuotas pagadas: <strong style={{color:t.text}}>{creditoEditando.cuotasPagadas}/{creditoEditando.cuotas}</strong>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
+              <Field label="Monto prestado ($)" value={formEdit.monto} onChange={v=>setFormEdit(f=>({...f,monto:v}))} type="number" t={t}/>
+              <Field label="Total a cobrar ($)" value={formEdit.totalCobrar} onChange={v=>setFormEdit(f=>({...f,totalCobrar:v}))} type="number" t={t}/>
+              <Field label="Cantidad de cuotas" value={formEdit.cuotas} onChange={v=>setFormEdit(f=>({...f,cuotas:v}))} type="number" t={t}/>
+              <Field label="Frecuencia" value={formEdit.frecuencia} onChange={v=>setFormEdit(f=>({...f,frecuencia:v}))} options={FRECUENCIAS} t={t}/>
+              <Field label="Estado" value={formEdit.estado} onChange={v=>setFormEdit(f=>({...f,estado:v}))} options={["Al día","Pendiente","Atrasado","Moroso","Refinanciado","Finalizado"]} t={t}/>
+            </div>
+            {formEdit.monto&&formEdit.totalCobrar&&formEdit.cuotas&&(
+              <div style={{background:t.bg,borderRadius:10,padding:"12px 16px",marginBottom:14,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                <div style={{textAlign:"center"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:700,marginBottom:2}}>Nueva cuota</div><div style={{fontSize:16,fontWeight:800,color:t.accent}}>{fmt(Math.round(+formEdit.totalCobrar/+formEdit.cuotas))}</div></div>
+                <div style={{textAlign:"center"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:700,marginBottom:2}}>Nueva ganancia</div><div style={{fontSize:16,fontWeight:800,color:t.accent2}}>{fmt(+formEdit.totalCobrar-+formEdit.monto)}</div></div>
+                <div style={{textAlign:"center"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:700,marginBottom:2}}>Nuevo pendiente</div><div style={{fontSize:16,fontWeight:800,color:"#ef4444"}}>{fmt(Math.max(0,+formEdit.totalCobrar-creditoEditando.saldoCobrado))}</div></div>
+              </div>
+            )}
+            {+formEdit.cuotas!==creditoEditando.cuotas&&<div style={{background:"#fef3c7",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#92400e",fontWeight:600}}>⚠️ Al cambiar la cantidad de cuotas se va a regenerar el cronograma manteniendo las cuotas ya pagadas.</div>}
+            <Field label="Comentarios" value={formEdit.comentarios} onChange={v=>setFormEdit(f=>({...f,comentarios:v}))} t={t}/>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+              <button onClick={()=>setEditModal(false)} style={{padding:"9px 18px",borderRadius:8,border:`1px solid ${t.border}`,background:"none",color:t.sub,cursor:"pointer",fontWeight:600}}>Cancelar</button>
+              <button onClick={guardarEdicion} disabled={loading} style={{padding:"9px 18px",borderRadius:8,border:"none",background:t.accent,color:"#fff",cursor:"pointer",fontWeight:700,opacity:loading?0.7:1}}>{loading?"Guardando...":"Guardar cambios"}</button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };
-
-// ── PRODUCTOS ─────────────────────────────────────────────────────────────────
 const Productos=({productos,setProductos,clients,t})=>{
   const [modal,setModal]=useState(false);
   const [loading,setLoading]=useState(false);

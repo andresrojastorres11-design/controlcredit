@@ -132,7 +132,109 @@ const generateReporteMensual=(creditos,clientes,productos,mes,anio)=>{
   abrirPDF(html,`Reporte_${nombreMes}_${anio}`);
 };
 
-// ── ICONS ─────────────────────────────────────────────────────────────────────
+// PDF de perfil de cliente
+const generatePDFCliente=(cliente,creditos,productos)=>{
+  const fecha=new Date().toLocaleDateString("es-AR");
+  const credC=creditos.filter(c=>c.clienteId===cliente.id);
+  const prodC=productos.filter(p=>p.clienteId===cliente.id);
+  const deudaTotal=credC.filter(c=>c.estado!=="Finalizado").reduce((s,c)=>s+c.saldoPendiente,0);
+  const totalPrestado=credC.reduce((s,c)=>s+c.monto,0);
+  const totalCobrado=credC.reduce((s,c)=>s+c.saldoCobrado,0);
+  const gananciaReal=credC.reduce((s,c)=>s+(c.ganancia/c.cuotas)*c.cuotasPagadas,0);
+
+  const filasCreditos=credC.map(c=>{
+    const pct=Math.round((c.cuotasPagadas/c.cuotas)*100);
+    const badgeClass=c.estado==="Al día"?"badge-verde":c.estado==="Moroso"?"badge-rojo":"badge-amarillo";
+    return`<tr>
+      <td>${fmtFecha(c.fechaOtorg)}</td>
+      <td>${fmt(c.monto)}</td>
+      <td>${fmt(c.valorCuota)}</td>
+      <td>${c.cuotasPagadas}/${c.cuotas} (${pct}%)</td>
+      <td style="color:#10b981;font-weight:700">${fmt(c.saldoCobrado)}</td>
+      <td style="color:#ef4444;font-weight:700">${fmt(c.saldoPendiente)}</td>
+      <td>${c.frecuencia}</td>
+      <td><span class="badge ${badgeClass}">${c.estado}</span></td>
+    </tr>`;
+  }).join("");
+
+  const filasCuotasPorCredito=credC.map(c=>{
+    const det=c.detalleCuotas||[];
+    if(det.length===0)return"";
+    const filasDetalle=det.map(d=>{
+      const vc=d.valorCuotaEditado||c.valorCuota;
+      const saldo=Math.max(0,vc-d.montoPagado);
+      const badgeClass=d.estado==="Pagada"?"badge-verde":d.estado==="Parcial"?"badge-amarillo":"badge-rojo";
+      return`<tr><td>${d.num}</td><td>${fmtFecha(d.fechaVenc)}</td><td>${fmt(vc)}${d.valorCuotaEditado&&d.valorCuotaEditado!==c.valorCuota?' <span class="badge badge-amarillo">+mora</span>':''}</td><td style="color:#10b981">${fmt(d.montoPagado)}</td><td style="color:#ef4444">${fmt(saldo)}</td><td><span class="badge ${badgeClass}">${d.estado}</span></td></tr>`;
+    }).join("");
+    return`<div class="seccion" style="margin-bottom:12px">
+      <div class="seccion-titulo">Crédito otorgado ${fmtFecha(c.fechaOtorg)} — ${c.frecuencia} — ${c.estado}</div>
+      <div class="seccion-body">
+        <table><tr><th>#</th><th>Vencimiento</th><th>Valor cuota</th><th>Pagado</th><th>Saldo</th><th>Estado</th></tr>${filasDetalle}</table>
+      </div>
+    </div>`;
+  }).join("");
+
+  const filasProd=prodC.map(p=>{
+    const pct=Math.round((p.cuotasPagadas/p.cuotas)*100);
+    return`<tr><td>${p.producto}</td><td>${fmt(p.inversion)}</td><td>${fmt(p.precioFinanciado)}</td><td>${p.cuotasPagadas}/${p.cuotas} (${pct}%)</td><td style="color:#10b981;font-weight:700">${fmt(p.ganancia)}</td><td>${p.frecuencia}</td><td><span class="badge ${p.estado==="Activo"?"badge-verde":"badge-rojo"}">${p.estado}</span></td></tr>`;
+  }).join("");
+
+  const scoreColor=cliente.score>70?"#10b981":cliente.score>40?"#f59e0b":"#ef4444";
+  const estadoBadge=cliente.estado==="Al día"||cliente.estado==="Premium"?"badge-verde":cliente.estado==="Moroso"?"badge-rojo":"badge-amarillo";
+
+  const html=`
+    <div class="header">
+      <div><div class="logo">Control<span>Credit</span></div><div class="subtitulo">Resumen de Cliente</div></div>
+      <div style="text-align:right"><div style="font-size:13px;font-weight:700">${cliente.nombre} ${cliente.apellido}</div><div style="font-size:11px;opacity:0.8">Generado: ${fecha}</div></div>
+    </div>
+
+    <div class="seccion">
+      <div class="seccion-titulo">📋 Datos personales</div>
+      <div class="seccion-body">
+        <table>
+          <tr><td><strong>Nombre:</strong> ${cliente.nombre} ${cliente.apellido}</td><td><strong>DNI:</strong> ${cliente.dni||"—"}</td><td><strong>Estado:</strong> <span class="badge ${estadoBadge}">${cliente.estado}</span></td><td><strong>Score:</strong> <span style="color:${scoreColor};font-weight:700">${cliente.score||75}/100</span></td></tr>
+          <tr><td><strong>Email:</strong> ${cliente.email||"—"}</td><td><strong>Teléfono:</strong> ${cliente.tel||"—"}</td><td><strong>Ciudad:</strong> ${cliente.ciudad||"—"}</td><td><strong>Provincia:</strong> ${cliente.provincia||"—"}</td></tr>
+          <tr><td><strong>Ocupación:</strong> ${cliente.ocupacion||"—"}</td><td><strong>Empresa:</strong> ${cliente.empresa||"—"}</td><td><strong>Sueldo aprox.:</strong> ${cliente.sueldo?fmt(cliente.sueldo):"—"}</td><td><strong>Estado civil:</strong> ${cliente.estadoCivil||"—"}</td></tr>
+          ${cliente.notas?`<tr><td colspan="4"><strong>Notas:</strong> ${cliente.notas}</td></tr>`:""}
+        </table>
+      </div>
+    </div>
+
+    <div class="seccion">
+      <div class="seccion-titulo">💰 Resumen financiero del cliente</div>
+      <div class="seccion-body" style="text-align:center">
+        <div class="metrica"><div class="metrica-label">Total prestado</div><div class="metrica-valor">${fmt(totalPrestado)}</div></div>
+        <div class="metrica"><div class="metrica-label">Ya cobrado</div><div class="metrica-valor" style="color:#10b981">${fmt(totalCobrado)}</div></div>
+        <div class="metrica"><div class="metrica-label">Deuda activa</div><div class="metrica-valor" style="color:#ef4444">${fmt(deudaTotal)}</div></div>
+        <div class="metrica"><div class="metrica-label">Ganancia generada</div><div class="metrica-valor" style="color:#8b5cf6">${fmt(gananciaReal)}</div></div>
+        <div class="metrica"><div class="metrica-label">Créditos totales</div><div class="metrica-valor">${credC.length}</div></div>
+        <div class="metrica"><div class="metrica-label">Ventas financiadas</div><div class="metrica-valor">${prodC.length}</div></div>
+      </div>
+    </div>
+
+    ${credC.length>0?`<div class="seccion">
+      <div class="seccion-titulo">💳 Historial de créditos (${credC.length})</div>
+      <div class="seccion-body">
+        <table><tr><th>Fecha</th><th>Capital</th><th>Cuota</th><th>Progreso</th><th>Cobrado</th><th>Pendiente</th><th>Frecuencia</th><th>Estado</th></tr>${filasCreditos}</table>
+      </div>
+    </div>`:""}
+
+    ${filasCuotasPorCredito?`<div style="margin-bottom:4px"><strong style="font-size:12px;color:#475569;text-transform:uppercase;letter-spacing:0.05em">Detalle de cuotas por crédito</strong></div>${filasCuotasPorCredito}`:""}
+
+    ${prodC.length>0?`<div class="seccion">
+      <div class="seccion-titulo">🛒 Ventas financiadas (${prodC.length})</div>
+      <div class="seccion-body">
+        <table><tr><th>Producto</th><th>Inversión</th><th>Financiado</th><th>Cuotas</th><th>Ganancia</th><th>Frecuencia</th><th>Estado</th></tr>${filasProd}</table>
+      </div>
+    </div>`:""}
+
+    <div style="background:#f0f9ff;border-left:4px solid #3b82f6;padding:12px 16px;font-size:11px;color:#1e40af;border-radius:0 8px 8px 0;margin-bottom:16px">
+      Documento generado automáticamente por ControlCredit. Información confidencial — uso interno.
+    </div>
+    <div class="footer">ControlCredit &copy; ${new Date().getFullYear()} — ${fecha} — Documento confidencial</div>
+  `;
+  abrirPDF(html,`Cliente_${cliente.nombre}_${cliente.apellido}`);
+};
 const Icon=({name,size=18})=>{
   const i={
     dashboard:<svg width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>,
@@ -394,6 +496,7 @@ const PerfilCliente=({client,creditos,productos,setCreditos,onClose,onEdit,t})=>
             </div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               {client.tel&&<a href={wa} target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",gap:7,background:"#25D366",color:"#fff",borderRadius:10,padding:"9px 14px",fontWeight:700,fontSize:13,textDecoration:"none"}}><Icon name="whatsapp" size={16}/>WhatsApp</a>}
+              <button onClick={()=>generatePDFCliente(client,creditos,productos)} style={{display:"flex",alignItems:"center",gap:6,background:"#3b82f6",color:"#fff",border:"none",borderRadius:10,padding:"9px 14px",fontWeight:700,fontSize:13,cursor:"pointer"}}><Icon name="pdf" size={14}/>Exportar PDF</button>
               <button onClick={()=>onEdit(client)} style={{display:"flex",alignItems:"center",gap:6,background:"none",border:`1px solid ${t.border}`,borderRadius:10,padding:"9px 14px",fontWeight:600,fontSize:13,color:t.sub,cursor:"pointer"}}><Icon name="edit" size={14}/>Editar</button>
             </div>
           </div>
@@ -564,19 +667,43 @@ const AdminUsuarios=({t})=>{
   );
 };
 const Dashboard=({clients,creditos,productos,t})=>{
-  const hoy=new Date();
+  const hoy=new Date();hoy.setHours(0,0,0,0);
   const [mesPDF,setMesPDF]=useState(hoy.getMonth()+1);
   const [anioPDF,setAnioPDF]=useState(hoy.getFullYear());
+  const [tabPagos,setTabPagos]=useState("aldia");
+
   const activos=creditos.filter(c=>c.estado!=="Finalizado");
   const plata=activos.reduce((s,c)=>s+(c.monto-c.monto*(c.cuotasPagadas/c.cuotas)),0);
   const porCobrar=activos.reduce((s,c)=>s+c.saldoPendiente,0);
   const ganEsp=creditos.reduce((s,c)=>s+c.ganancia,0);
   const ganReal=creditos.reduce((s,c)=>s+(c.ganancia/c.cuotas)*c.cuotasPagadas,0);
-  const morosos=clients.filter(c=>c.estado==="Moroso").length;
-  const alDia=clients.filter(c=>c.estado==="Al día"||c.estado==="Premium").length;
+  const nMorosos=clients.filter(c=>c.estado==="Moroso").length;
+  const nAlDia=clients.filter(c=>c.estado==="Al día"||c.estado==="Premium").length;
   const alertas=creditos.filter(c=>c.estado==="Moroso"||c.estado==="Atrasado");
   const COLORS=["#3b82f6","#ef4444","#f59e0b","#8b5cf6"];
-  const pie=[{name:"Al día",value:alDia},{name:"Morosos",value:morosos},{name:"Atrasados",value:clients.filter(c=>c.estado==="Atrasado").length}].filter(d=>d.value>0);
+  const pie=[{name:"Al día",value:nAlDia},{name:"Morosos",value:nMorosos},{name:"Atrasados",value:clients.filter(c=>c.estado==="Atrasado").length}].filter(d=>d.value>0);
+
+  // ── Lógica de pagos ──
+  const en3dias=new Date(hoy);en3dias.setDate(hoy.getDate()+3);
+  const itemsPagos=activos.map(c=>{
+    const proxFecha=c.proximoPago?new Date(c.proximoPago):null;
+    if(proxFecha)proxFecha.setHours(0,0,0,0);
+    const diffDias=proxFecha?Math.round((proxFecha-hoy)/(1000*60*60*24)):null;
+    let cat="aldia";
+    if(c.estado==="Moroso"||c.estado==="Atrasado"||(proxFecha&&diffDias<0))cat="moroso";
+    else if(proxFecha&&diffDias<=3)cat="porvencer";
+    return{...c,proxFecha,diffDias,cat};
+  });
+  const pagosAlDia=itemsPagos.filter(i=>i.cat==="aldia");
+  const pagosPorVencer=itemsPagos.filter(i=>i.cat==="porvencer");
+  const pagosMorosos=itemsPagos.filter(i=>i.cat==="moroso");
+  const tabsConfig=[
+    {id:"aldia",label:"Al día",count:pagosAlDia.length,color:"#10b981",bg:"#d1fae510",border:"#10b98130"},
+    {id:"porvencer",label:"Por vencer",count:pagosPorVencer.length,color:"#f59e0b",bg:"#fef3c710",border:"#f59e0b30"},
+    {id:"moroso",label:"Morosos",count:pagosMorosos.length,color:"#ef4444",bg:"#fee2e210",border:"#ef444430"},
+  ];
+  const listaActiva=tabPagos==="aldia"?pagosAlDia:tabPagos==="porvencer"?pagosPorVencer:pagosMorosos;
+  const tabActiva=tabsConfig.find(tab=>tab.id===tabPagos);
   return(
     <div>
       <div style={{marginBottom:22,display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
@@ -678,100 +805,70 @@ const Dashboard=({clients,creditos,productos,t})=>{
           </div>
         );
       })()}
-      {(creditos.length>0||clients.length>0)&&(()=>{
-        const hoy=new Date();hoy.setHours(0,0,0,0);
-        const en3dias=new Date(hoy);en3dias.setDate(hoy.getDate()+3);
-        // Para cada crédito activo, tomamos la próxima cuota pendiente
-        const creditosActivos=creditos.filter(c=>c.estado!=="Finalizado");
-        const items=creditosActivos.map(c=>{
-          const proxFecha=c.proximoPago?new Date(c.proximoPago):null;
-          if(proxFecha)proxFecha.setHours(0,0,0,0);
-          const diffDias=proxFecha?Math.round((proxFecha-hoy)/(1000*60*60*24)):null;
-          let categoria="aldia";
-          if(c.estado==="Moroso")categoria="moroso";
-          else if(proxFecha&&diffDias<0)categoria="moroso";
-          else if(proxFecha&&diffDias<=3)categoria="porvencer";
-          else categoria="aldia";
-          return{...c,proxFecha,diffDias,categoria};
-        });
-        const alDia=items.filter(i=>i.categoria==="aldia");
-        const porVencer=items.filter(i=>i.categoria==="porvencer");
-        const morosos=items.filter(i=>i.categoria==="moroso");
-        const [tabPagos,setTabPagos]=useState("aldia");
-        const lista=tabPagos==="aldia"?alDia:tabPagos==="porvencer"?porVencer:morosos;
-        const tabs=[
-          {id:"aldia",label:"Al día",count:alDia.length,color:"#10b981",bg:"#d1fae5"},
-          {id:"porvencer",label:"Por vencer",count:porVencer.length,color:"#f59e0b",bg:"#fef3c7"},
-          {id:"moroso",label:"Morosos",count:morosos.length,color:"#ef4444",bg:"#fee2e2"},
-        ];
-        return(
-          <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,marginBottom:18,overflow:"hidden"}}>
-            <div style={{padding:"18px 22px 0"}}>
-              <h3 style={{margin:"0 0 14px",fontSize:16,fontWeight:800,color:t.text}}>💳 Pagos</h3>
-              {/* Tabs */}
-              <div style={{display:"flex",gap:8,marginBottom:0}}>
-                {tabs.map(tab=>(
-                  <button key={tab.id} onClick={()=>setTabPagos(tab.id)}
-                    style={{display:"flex",alignItems:"center",gap:7,padding:"9px 18px",borderRadius:"10px 10px 0 0",border:`1px solid ${tabPagos===tab.id?tab.color:t.border}`,borderBottom:tabPagos===tab.id?`2px solid ${tab.color}`:`1px solid ${t.border}`,background:tabPagos===tab.id?tab.bg:"transparent",cursor:"pointer",fontWeight:700,fontSize:13,color:tabPagos===tab.id?tab.color:t.sub,transition:"all 0.15s"}}>
-                    <span style={{width:22,height:22,borderRadius:"50%",background:tab.color,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900}}>{tab.count}</span>
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+      {/* ── SECCIÓN PAGOS ── */}
+      {creditos.length>0&&(
+        <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,marginBottom:20,overflow:"hidden"}}>
+          <div style={{padding:"18px 22px 0"}}>
+            <h3 style={{margin:"0 0 14px",fontSize:16,fontWeight:800,color:t.text}}>💳 Pagos</h3>
+            <div style={{display:"flex",gap:0,borderBottom:`1px solid ${t.border}`}}>
+              {tabsConfig.map(tab=>(
+                <button key={tab.id} onClick={()=>setTabPagos(tab.id)}
+                  style={{display:"flex",alignItems:"center",gap:7,padding:"10px 20px",border:"none",borderBottom:tabPagos===tab.id?`3px solid ${tab.color}`:"3px solid transparent",background:"transparent",cursor:"pointer",fontWeight:tabPagos===tab.id?700:500,fontSize:13,color:tabPagos===tab.id?tab.color:t.sub,transition:"all 0.15s"}}>
+                  <span style={{width:22,height:22,borderRadius:"50%",background:tabPagos===tab.id?tab.color:`${tab.color}40`,color:tabPagos===tab.id?"#fff":tab.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900}}>{tab.count}</span>
+                  {tab.label}
+                </button>
+              ))}
             </div>
-            {/* Contenido */}
-            <div style={{borderTop:`2px solid ${tabs.find(t=>t.id===tabPagos)?.color||t.border}`,padding:"16px 22px",maxHeight:420,overflowY:"auto"}}>
-              {lista.length===0?(
-                <div style={{textAlign:"center",padding:"30px 0",color:t.sub}}>
-                  <div style={{fontSize:32,marginBottom:8}}>{tabPagos==="aldia"?"✅":tabPagos==="porvencer"?"⏰":"🔴"}</div>
-                  <div style={{fontSize:13,fontWeight:600,color:t.text}}>
-                    {tabPagos==="aldia"?"Sin créditos al día por mostrar":tabPagos==="porvencer"?"No hay vencimientos en los próximos 3 días":"No hay clientes morosos 🎉"}
-                  </div>
+          </div>
+          <div style={{padding:"16px 22px",maxHeight:400,overflowY:"auto"}}>
+            {listaActiva.length===0?(
+              <div style={{textAlign:"center",padding:"28px 0",color:t.sub}}>
+                <div style={{fontSize:32,marginBottom:8}}>{tabPagos==="aldia"?"✅":tabPagos==="porvencer"?"⏰":"🎉"}</div>
+                <div style={{fontSize:13,fontWeight:600,color:t.text}}>
+                  {tabPagos==="aldia"?"No hay créditos al día activos":tabPagos==="porvencer"?"Ningún vencimiento en los próximos 3 días":"No hay clientes morosos"}
                 </div>
-              ):(
-                <div style={{display:"grid",gap:10}}>
-                  {lista.map(c=>{
-                    const colorTab=tabs.find(tab=>tab.id===tabPagos)?.color||t.accent;
-                    const bgTab=tabs.find(tab=>tab.id===tabPagos)?.bg||t.bg;
-                    const diffLabel=c.diffDias===null?"Sin fecha":c.diffDias<0?`Venció hace ${Math.abs(c.diffDias)} día${Math.abs(c.diffDias)!==1?"s":""}`:c.diffDias===0?"Vence HOY":c.diffDias===1?"Vence mañana":`Vence en ${c.diffDias} días`;
-                    const clienteInfo=clients.find(cl=>cl.id===c.clienteId);
-                    return(
-                      <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:bgTab,borderRadius:10,border:`1px solid ${colorTab}30`,flexWrap:"wrap",gap:10}}>
-                        <div style={{display:"flex",alignItems:"center",gap:12}}>
-                          <div style={{width:40,height:40,borderRadius:"50%",background:colorTab,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:14,flexShrink:0}}>
-                            {c.clienteNombre?c.clienteNombre[0]:"?"}
-                          </div>
-                          <div>
-                            <div style={{fontWeight:700,color:t.text,fontSize:14}}>{c.clienteNombre}</div>
-                            <div style={{fontSize:11,color:t.sub,display:"flex",gap:10,flexWrap:"wrap"}}>
-                              <span>Cuota: <strong style={{color:t.text}}>{fmt(c.valorCuota)}</strong></span>
-                              <span>Pendiente: <strong style={{color:colorTab}}>{fmt(c.saldoPendiente)}</strong></span>
-                              <span>Frecuencia: {c.frecuencia}</span>
-                              <span style={{fontWeight:700,color:colorTab}}>{diffLabel}</span>
-                            </div>
-                          </div>
+              </div>
+            ):(
+              <div style={{display:"grid",gap:10}}>
+                {listaActiva.map(c=>{
+                  const clienteInfo=clients.find(cl=>cl.id===c.clienteId);
+                  const diffLabel=c.diffDias===null?"Sin fecha":c.diffDias<0?`Venció hace ${Math.abs(c.diffDias)} día${Math.abs(c.diffDias)!==1?"s":""}`:c.diffDias===0?"Vence HOY":c.diffDias===1?"Vence mañana":`Vence en ${c.diffDias} días`;
+                  return(
+                    <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:tabActiva.bg,borderRadius:10,border:`1px solid ${tabActiva.border}`,flexWrap:"wrap",gap:10}}>
+                      <div style={{display:"flex",alignItems:"center",gap:12}}>
+                        <div style={{width:40,height:40,borderRadius:"50%",background:tabActiva.color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:15,flexShrink:0}}>
+                          {(c.clienteNombre||"?")[0].toUpperCase()}
                         </div>
-                        <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                          {clienteInfo?.tel&&(
-                            <a href={`https://wa.me/54${clienteInfo.tel.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer"
-                              style={{display:"flex",alignItems:"center",gap:5,background:"#25D366",color:"#fff",borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:700,textDecoration:"none"}}>
-                              <Icon name="whatsapp" size={14}/>WhatsApp
-                            </a>
-                          )}
-                          <div style={{textAlign:"right"}}>
-                            <div style={{fontSize:11,color:t.sub}}>{c.cuotasPagadas}/{c.cuotas} cuotas</div>
-                            <div style={{fontSize:10,color:t.sub}}>Próx: {fmtFecha(c.proximoPago)}</div>
+                        <div>
+                          <div style={{fontWeight:700,color:t.text,fontSize:14}}>{c.clienteNombre}</div>
+                          <div style={{fontSize:11,color:t.sub,display:"flex",gap:12,flexWrap:"wrap",marginTop:2}}>
+                            <span>Cuota: <strong style={{color:t.text}}>{fmt(c.valorCuota)}</strong></span>
+                            <span>Saldo: <strong style={{color:tabActiva.color}}>{fmt(c.saldoPendiente)}</strong></span>
+                            <span>{c.frecuencia}</span>
+                            <span style={{fontWeight:700,color:tabActiva.color}}>{diffLabel}</span>
                           </div>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+                      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                        {clienteInfo?.tel&&(
+                          <a href={`https://wa.me/54${clienteInfo.tel.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer"
+                            style={{display:"flex",alignItems:"center",gap:5,background:"#25D366",color:"#fff",borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:700,textDecoration:"none"}}>
+                            <Icon name="whatsapp" size={14}/>WhatsApp
+                          </a>
+                        )}
+                        <div style={{textAlign:"right"}}>
+                          <div style={{fontSize:11,color:t.sub}}>{c.cuotasPagadas}/{c.cuotas} cuotas</div>
+                          <div style={{fontSize:10,color:t.sub}}>Próx: {fmtFecha(c.proximoPago)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        );
-      })()}
+        </div>
+      )}
       {(creditos.length>0||clients.length>0)&&<div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:18,marginBottom:18}}>
         <div style={{background:t.card,borderRadius:14,padding:"20px 22px",border:`1px solid ${t.border}`}}>
           <h3 style={{margin:"0 0 16px",fontSize:15,fontWeight:700,color:t.text}}>Evolución mensual</h3>
@@ -860,7 +957,7 @@ const Clientes=({clients,setClients,creditos,setCreditos,productos,t})=>{
                 <td style={{padding:"12px 15px",color:t.sub,fontSize:13}}>{c.ciudad}</td>
                 <td style={{padding:"12px 15px"}}><div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:50,height:6,borderRadius:3,background:t.border,overflow:"hidden"}}><div style={{width:`${c.score||75}%`,height:"100%",background:c.score>70?"#10b981":c.score>40?"#f59e0b":"#ef4444",borderRadius:3}}/></div><span style={{fontSize:12,fontWeight:700,color:t.text}}>{c.score||75}</span></div></td>
                 <td style={{padding:"12px 15px"}}><Badge status={c.estado}/></td>
-                <td style={{padding:"12px 15px"}}><div style={{display:"flex",gap:6}}><button onClick={e=>openEdit(c,e)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"5px 8px",cursor:"pointer",color:t.sub}}><Icon name="edit" size={14}/></button><button onClick={e=>del(c.id,e)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"5px 8px",cursor:"pointer",color:"#ef4444"}}><Icon name="trash" size={14}/></button></div></td>
+                <td style={{padding:"12px 15px"}}><div style={{display:"flex",gap:6}}><button onClick={e=>openEdit(c,e)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"5px 8px",cursor:"pointer",color:t.sub}}><Icon name="edit" size={14}/></button><button onClick={e=>{e.stopPropagation();generatePDFCliente(c,creditos,productos);}} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"5px 8px",cursor:"pointer",color:"#3b82f6"}} title="Exportar PDF del cliente"><Icon name="pdf" size={14}/></button><button onClick={e=>del(c.id,e)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"5px 8px",cursor:"pointer",color:"#ef4444"}}><Icon name="trash" size={14}/></button></div></td>
               </tr>
             ))}</tbody>
           </table>

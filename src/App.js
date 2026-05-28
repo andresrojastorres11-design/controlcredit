@@ -683,7 +683,18 @@ const Dashboard=({clients,creditos,productos,t})=>{
   const COLORS=["#3b82f6","#ef4444","#f59e0b","#8b5cf6"];
   const pie=[{name:"Al día",value:nAlDia},{name:"Morosos",value:nMorosos},{name:"Atrasados",value:clients.filter(c=>c.estado==="Atrasado").length}].filter(d=>d.value>0);
 
-  // ── Lógica de pagos ──
+  // Flujo de efectivo
+  const totalCobradoReal=creditos.reduce((s,c)=>s+c.saldoCobrado,0);
+  const totalPendienteReal=creditos.reduce((s,c)=>s+c.saldoPendiente,0);
+  const flujoTotal=totalCobradoReal+totalPendienteReal;
+  const capitalRecuperado=creditos.reduce((s,c)=>s+c.monto*(c.cuotasPagadas/c.cuotas),0);
+  const interesesCobrados=Math.max(0,totalCobradoReal-capitalRecuperado);
+  const morasCobradas=creditos.reduce((s,c)=>{
+    const det=c.detalleCuotas||[];
+    return s+det.reduce((ss,d)=>{const extra=(d.valorCuotaEditado||0)-(c.valorCuota||0);return ss+(extra>0&&d.estado==="Pagada"?extra:0);},0);
+  },0);
+
+  // Pagos tabs
   const en3dias=new Date(hoy);en3dias.setDate(hoy.getDate()+3);
   const itemsPagos=activos.map(c=>{
     const proxFecha=c.proximoPago?new Date(c.proximoPago):null;
@@ -704,6 +715,7 @@ const Dashboard=({clients,creditos,productos,t})=>{
   ];
   const listaActiva=tabPagos==="aldia"?pagosAlDia:tabPagos==="porvencer"?pagosPorVencer:pagosMorosos;
   const tabActiva=tabsConfig.find(tab=>tab.id===tabPagos);
+
   return(
     <div>
       <div style={{marginBottom:22,display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
@@ -721,91 +733,60 @@ const Dashboard=({clients,creditos,productos,t})=>{
           </button>
         </div>
       </div>
+
       {alertas.length>0&&<div style={{background:"#fef3c7",border:"1px solid #fcd34d",borderRadius:12,padding:"12px 18px",marginBottom:20,display:"flex",gap:10,alignItems:"center"}}><Icon name="alert" size={18}/><span style={{color:"#92400e",fontSize:13,fontWeight:600}}>{alertas.length} crédito(s) requieren atención.</span></div>}
       {clients.length===0&&<div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"40px",textAlign:"center",marginBottom:20}}><div style={{fontSize:36,marginBottom:12}}>🚀</div><div style={{fontSize:16,fontWeight:700,color:t.text,marginBottom:6}}>¡Bienvenido a ControlCredit!</div><div style={{fontSize:13,color:t.sub}}>Empezá agregando tu primer cliente.</div></div>}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:14,marginBottom:24}}>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:14,marginBottom:20}}>
         <MetricCard label="Plata en la calle" value={fmt(plata)} icon="coin" color="#3b82f6" sub="Capital no recuperado" t={t}/>
         <MetricCard label="Por cobrar" value={fmt(porCobrar)} icon="cartera" color="#10b981" t={t}/>
         <MetricCard label="Ganancia esperada" value={fmt(ganEsp)} icon="creditos" color="#8b5cf6" t={t}/>
         <MetricCard label="Ganancia realizada" value={fmt(ganReal)} icon="check" color="#10b981" t={t}/>
         <MetricCard label="Total clientes" value={clients.length} icon="users" color="#f59e0b" t={t}/>
-        <MetricCard label="Morosos" value={morosos} icon="alert" color="#ef4444" t={t}/>
+        <MetricCard label="Morosos" value={nMorosos} icon="alert" color="#ef4444" t={t}/>
         <MetricCard label="Créditos activos" value={activos.length} icon="creditos" color="#3b82f6" t={t}/>
         <MetricCard label="Prod. activos" value={productos.filter(p=>p.estado==="Activo").length} icon="productos" color="#10b981" t={t}/>
       </div>
 
-      {/* ── FLUJO DE EFECTIVO ── */}
-      {creditos.length>0&&(()=>{
-        // Flujo real = todo el dinero cobrado efectivamente (capital + interés incluido)
-        const totalCobradoReal=creditos.reduce((s,c)=>s+c.saldoCobrado,0);
-        // Flujo pendiente = todo lo que falta cobrar (capital + interés pendiente, incluyendo moras editadas)
-        const totalPendienteReal=creditos.reduce((s,c)=>s+c.saldoPendiente,0);
-        // Flujo total = totalCobrado + totalPendiente = todo el dinero que va a circular
-        const flujoTotal=totalCobradoReal+totalPendienteReal;
-        // Interés ya cobrado = cobrado - capital recuperado
-        const capitalRecuperado=creditos.reduce((s,c)=>s+c.monto*(c.cuotasPagadas/c.cuotas),0);
-        const interesesCobrados=Math.max(0,totalCobradoReal-capitalRecuperado);
-        // Moras cobradas (cuotas con valor editado)
-        const morasCobradas=creditos.reduce((s,c)=>{
-          const det=c.detalleCuotas||[];
-          return s+det.reduce((ss,d)=>{
-            const extra=(d.valorCuotaEditado||0)-(c.valorCuota||0);
-            return ss+(extra>0&&d.estado==="Pagada"?extra:0);
-          },0);
-        },0);
-        return(
-          <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"20px 24px",marginBottom:20}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
-              <div>
-                <h3 style={{margin:"0 0 3px",fontSize:16,fontWeight:800,color:t.text}}>💵 Flujo de Efectivo</h3>
-                <p style={{margin:0,fontSize:12,color:t.sub}}>Capital + intereses que circulan en tu negocio</p>
-              </div>
+      {/* FLUJO DE EFECTIVO */}
+      {creditos.length>0&&(
+        <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"20px 24px",marginBottom:20}}>
+          <h3 style={{margin:"0 0 14px",fontSize:16,fontWeight:800,color:t.text}}>💵 Flujo de Efectivo</h3>
+          <p style={{margin:"0 0 16px",fontSize:12,color:t.sub}}>Capital + intereses que circulan en tu negocio</p>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:12,marginBottom:16}}>
+            <div style={{background:"#3b82f618",borderRadius:12,padding:"14px 18px",border:"1px solid #3b82f630"}}>
+              <div style={{fontSize:10,color:"#3b82f6",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Total flujo proyectado</div>
+              <div style={{fontSize:20,fontWeight:900,color:t.text}}>{fmt(flujoTotal)}</div>
+              <div style={{fontSize:11,color:t.sub,marginTop:2}}>Capital + intereses totales</div>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:12,marginBottom:16}}>
-              <div style={{background:`#3b82f618`,borderRadius:12,padding:"14px 18px",border:"1px solid #3b82f630"}}>
-                <div style={{fontSize:10,color:"#3b82f6",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Total flujo proyectado</div>
-                <div style={{fontSize:20,fontWeight:900,color:t.text}}>{fmt(flujoTotal)}</div>
-                <div style={{fontSize:11,color:t.sub,marginTop:2}}>Capital + intereses totales</div>
-              </div>
-              <div style={{background:`#10b98118`,borderRadius:12,padding:"14px 18px",border:"1px solid #10b98130"}}>
-                <div style={{fontSize:10,color:"#10b981",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Ya cobrado (efectivo)</div>
-                <div style={{fontSize:20,fontWeight:900,color:"#10b981"}}>{fmt(totalCobradoReal)}</div>
-                <div style={{fontSize:11,color:t.sub,marginTop:2}}>Dinero que ya tenés en mano</div>
-              </div>
-              <div style={{background:`#ef444418`,borderRadius:12,padding:"14px 18px",border:"1px solid #ef444430"}}>
-                <div style={{fontSize:10,color:"#ef4444",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Pendiente de cobrar</div>
-                <div style={{fontSize:20,fontWeight:900,color:"#ef4444"}}>{fmt(totalPendienteReal)}</div>
-                <div style={{fontSize:11,color:t.sub,marginTop:2}}>Falta recibir</div>
-              </div>
-              <div style={{background:`#8b5cf618`,borderRadius:12,padding:"14px 18px",border:"1px solid #8b5cf630"}}>
-                <div style={{fontSize:10,color:"#8b5cf6",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Intereses cobrados</div>
-                <div style={{fontSize:20,fontWeight:900,color:"#8b5cf6"}}>{fmt(interesesCobrados)}</div>
-                <div style={{fontSize:11,color:t.sub,marginTop:2}}>Ganancia ya realizada</div>
-              </div>
-              {morasCobradas>0&&<div style={{background:`#f59e0b18`,borderRadius:12,padding:"14px 18px",border:"1px solid #f59e0b30"}}>
-                <div style={{fontSize:10,color:"#f59e0b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Moras cobradas</div>
-                <div style={{fontSize:20,fontWeight:900,color:"#f59e0b"}}>{fmt(morasCobradas)}</div>
-                <div style={{fontSize:11,color:t.sub,marginTop:2}}>Intereses por atrasos</div>
-              </div>}
+            <div style={{background:"#10b98118",borderRadius:12,padding:"14px 18px",border:"1px solid #10b98130"}}>
+              <div style={{fontSize:10,color:"#10b981",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Ya cobrado</div>
+              <div style={{fontSize:20,fontWeight:900,color:"#10b981"}}>{fmt(totalCobradoReal)}</div>
+              <div style={{fontSize:11,color:t.sub,marginTop:2}}>Dinero que ya tenés en mano</div>
             </div>
-            {/* Barra de progreso del flujo */}
-            <div>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                <span style={{fontSize:12,color:t.sub,fontWeight:600}}>Progreso de cobro</span>
-                <span style={{fontSize:13,fontWeight:800,color:t.text}}>{flujoTotal>0?Math.round((totalCobradoReal/flujoTotal)*100):0}%</span>
-              </div>
-              <div style={{height:10,borderRadius:5,background:t.border,overflow:"hidden"}}>
-                <div style={{width:`${flujoTotal>0?(totalCobradoReal/flujoTotal)*100:0}%`,height:"100%",background:"linear-gradient(90deg,#3b82f6,#10b981)",borderRadius:5,transition:"width 0.5s"}}/>
-              </div>
-              <div style={{display:"flex",justifyContent:"space-between",marginTop:4,fontSize:11,color:t.sub}}>
-                <span>Cobrado: {fmt(totalCobradoReal)}</span>
-                <span>Pendiente: {fmt(totalPendienteReal)}</span>
-              </div>
+            <div style={{background:"#ef444418",borderRadius:12,padding:"14px 18px",border:"1px solid #ef444430"}}>
+              <div style={{fontSize:10,color:"#ef4444",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Pendiente de cobrar</div>
+              <div style={{fontSize:20,fontWeight:900,color:"#ef4444"}}>{fmt(totalPendienteReal)}</div>
+              <div style={{fontSize:11,color:t.sub,marginTop:2}}>Falta recibir</div>
             </div>
+            <div style={{background:"#8b5cf618",borderRadius:12,padding:"14px 18px",border:"1px solid #8b5cf630"}}>
+              <div style={{fontSize:10,color:"#8b5cf6",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Intereses cobrados</div>
+              <div style={{fontSize:20,fontWeight:900,color:"#8b5cf6"}}>{fmt(interesesCobrados)}</div>
+              <div style={{fontSize:11,color:t.sub,marginTop:2}}>Ganancia ya realizada</div>
+            </div>
+            {morasCobradas>0&&<div style={{background:"#f59e0b18",borderRadius:12,padding:"14px 18px",border:"1px solid #f59e0b30"}}>
+              <div style={{fontSize:10,color:"#f59e0b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Moras cobradas</div>
+              <div style={{fontSize:20,fontWeight:900,color:"#f59e0b"}}>{fmt(morasCobradas)}</div>
+              <div style={{fontSize:11,color:t.sub,marginTop:2}}>Intereses por atrasos</div>
+            </div>}
           </div>
-        );
-      })()}
-      {/* ── SECCIÓN PAGOS ── */}
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:12,color:t.sub,fontWeight:600}}>Progreso de cobro</span><span style={{fontSize:13,fontWeight:800,color:t.text}}>{flujoTotal>0?Math.round((totalCobradoReal/flujoTotal)*100):0}%</span></div>
+          <div style={{height:10,borderRadius:5,background:t.border,overflow:"hidden"}}><div style={{width:`${flujoTotal>0?(totalCobradoReal/flujoTotal)*100:0}%`,height:"100%",background:"linear-gradient(90deg,#3b82f6,#10b981)",borderRadius:5}}/></div>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:4,fontSize:11,color:t.sub}}><span>Cobrado: {fmt(totalCobradoReal)}</span><span>Pendiente: {fmt(totalPendienteReal)}</span></div>
+        </div>
+      )}
+
+      {/* PAGOS */}
       {creditos.length>0&&(
         <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,marginBottom:20,overflow:"hidden"}}>
           <div style={{padding:"18px 22px 0"}}>
@@ -832,13 +813,11 @@ const Dashboard=({clients,creditos,productos,t})=>{
               <div style={{display:"grid",gap:10}}>
                 {listaActiva.map(c=>{
                   const clienteInfo=clients.find(cl=>cl.id===c.clienteId);
-                  const diffLabel=c.diffDias===null?"Sin fecha":c.diffDias<0?`Venció hace ${Math.abs(c.diffDias)} día${Math.abs(c.diffDias)!==1?"s":""}`:c.diffDias===0?"Vence HOY":c.diffDias===1?"Vence mañana":`Vence en ${c.diffDias} días`;
+                  const diffLabel=c.diffDias===null?"Sin fecha":c.diffDias<0?`Venció hace ${Math.abs(c.diffDias)} día${Math.abs(c.diffDias)!==1?"s":""}`  :c.diffDias===0?"Vence HOY":c.diffDias===1?"Vence mañana":`Vence en ${c.diffDias} días`;
                   return(
                     <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:tabActiva.bg,borderRadius:10,border:`1px solid ${tabActiva.border}`,flexWrap:"wrap",gap:10}}>
                       <div style={{display:"flex",alignItems:"center",gap:12}}>
-                        <div style={{width:40,height:40,borderRadius:"50%",background:tabActiva.color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:15,flexShrink:0}}>
-                          {(c.clienteNombre||"?")[0].toUpperCase()}
-                        </div>
+                        <div style={{width:40,height:40,borderRadius:"50%",background:tabActiva.color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:15,flexShrink:0}}>{(c.clienteNombre||"?")[0].toUpperCase()}</div>
                         <div>
                           <div style={{fontWeight:700,color:t.text,fontSize:14}}>{c.clienteNombre}</div>
                           <div style={{fontSize:11,color:t.sub,display:"flex",gap:12,flexWrap:"wrap",marginTop:2}}>
@@ -850,12 +829,7 @@ const Dashboard=({clients,creditos,productos,t})=>{
                         </div>
                       </div>
                       <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                        {clienteInfo?.tel&&(
-                          <a href={`https://wa.me/54${clienteInfo.tel.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer"
-                            style={{display:"flex",alignItems:"center",gap:5,background:"#25D366",color:"#fff",borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:700,textDecoration:"none"}}>
-                            <Icon name="whatsapp" size={14}/>WhatsApp
-                          </a>
-                        )}
+                        {clienteInfo?.tel&&<a href={`https://wa.me/54${clienteInfo.tel.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",gap:5,background:"#25D366",color:"#fff",borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:700,textDecoration:"none"}}><Icon name="whatsapp" size={14}/>WhatsApp</a>}
                         <div style={{textAlign:"right"}}>
                           <div style={{fontSize:11,color:t.sub}}>{c.cuotasPagadas}/{c.cuotas} cuotas</div>
                           <div style={{fontSize:10,color:t.sub}}>Próx: {fmtFecha(c.proximoPago)}</div>
@@ -869,6 +843,7 @@ const Dashboard=({clients,creditos,productos,t})=>{
           </div>
         </div>
       )}
+
       {(creditos.length>0||clients.length>0)&&<div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:18,marginBottom:18}}>
         <div style={{background:t.card,borderRadius:14,padding:"20px 22px",border:`1px solid ${t.border}`}}>
           <h3 style={{margin:"0 0 16px",fontSize:15,fontWeight:700,color:t.text}}>Evolución mensual</h3>
@@ -885,7 +860,6 @@ const Dashboard=({clients,creditos,productos,t})=>{
   );
 };
 
-// ── CLIENTES ──────────────────────────────────────────────────────────────────
 const Clientes=({clients,setClients,creditos,setCreditos,productos,t})=>{
   const [search,setSearch]=useState("");
   const [filtro,setFiltro]=useState("Todos");

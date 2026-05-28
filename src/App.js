@@ -693,34 +693,55 @@ const Dashboard=({clients,creditos,productos,t})=>{
     return s+det.reduce((ss,d)=>{const extra=(d.valorCuotaEditado||0)-(c.valorCuota||0);return ss+(extra>0&&d.estado==="Pagada"?extra:0);},0);
   },0);
 
-  // Pagos tabs — lógica actualizada
-  const itemsPagos=activos.map(c=>{
+  // ── PAGOS: nueva lógica ──
+  // Al día: vence hoy o hasta 3 días después (período de gracia)
+  // Vencido: entre 4 y 15 días sin pagar
+  // Moroso: más de 15 días sin pagar
+  // Un cliente aparece UNA SOLA VEZ aunque tenga varias cuotas vencidas
+  // Si ya pagó todas las cuotas del período → no aparece
+  const [clienteExpandido,setClienteExpandido]=useState(null);
+
+  const itemsPagosRaw=activos.map(c=>{
     const det=c.detalleCuotas||[];
-    // Buscar la próxima cuota pendiente o parcial
-    const proxCuota=det.find(d=>d.estado==="Pendiente"||d.estado==="Parcial");
-    if(!proxCuota)return null; // todas las cuotas pagadas, no mostrar
+    // Cuotas pendientes o parciales ordenadas por fecha
+    const pendientes=det.filter(d=>d.estado==="Pendiente"||d.estado==="Parcial").sort((a,b)=>new Date(a.fechaVenc)-new Date(b.fechaVenc));
+    if(pendientes.length===0)return null;
+    // Tomar la cuota más antigua pendiente
+    const proxCuota=pendientes[0];
     const proxFecha=proxCuota.fechaVenc?new Date(proxCuota.fechaVenc):c.proximoPago?new Date(c.proximoPago):null;
     if(proxFecha)proxFecha.setHours(0,0,0,0);
     const diffDias=proxFecha?Math.round((proxFecha-hoy)/(1000*60*60*24)):null;
-    let cat=null;
     if(diffDias===null)return null;
-    if(diffDias===0)cat="aldia";           // vence HOY
-    else if(diffDias>0&&diffDias<=3)cat="porvencer"; // vence en 1-3 días
-    else if(diffDias<0&&diffDias>=-2)cat="vencido";  // venció hace 1-2 días
-    else if(diffDias<-2)cat="vencido";    // venció hace más de 2 días → vencido
-    else return null; // más de 3 días → no mostrar todavía
-    return{...c,proxFecha,diffDias,cat,proxCuota};
+    let cat=null;
+    if(diffDias>=0&&diffDias<=3)cat="aldia";         // hoy o gracia 3 días
+    else if(diffDias<0&&diffDias>=-15)cat="vencido"; // 4-15 días vencida
+    else if(diffDias<-15)cat="moroso";               // más de 15 días → moroso
+    else return null; // más de 3 días futuros → no mostrar
+    // Cuotas vencidas del crédito
+    const cuotasVencidas=det.filter(d=>(d.estado==="Pendiente"||d.estado==="Parcial")&&d.fechaVenc&&new Date(d.fechaVenc)<hoy);
+    return{...c,proxFecha,diffDias,cat,proxCuota,pendientes,cuotasVencidas};
   }).filter(Boolean);
+
+  // Agrupar por cliente — un cliente aparece una sola vez (el peor estado gana)
+  const catPrioridad={moroso:3,vencido:2,aldia:1};
+  const clientesMap={};
+  itemsPagosRaw.forEach(item=>{
+    const cid=item.clienteId;
+    if(!clientesMap[cid]||catPrioridad[item.cat]>catPrioridad[clientesMap[cid].cat]){
+      clientesMap[cid]=item;
+    }
+  });
+  const itemsPagos=Object.values(clientesMap);
   const pagosAlDia=itemsPagos.filter(i=>i.cat==="aldia");
-  const pagosPorVencer=itemsPagos.filter(i=>i.cat==="porvencer");
-  const pagosMorosos=itemsPagos.filter(i=>i.cat==="vencido");
+  const pagosPorVencer=itemsPagos.filter(i=>i.cat==="vencido");
+  const pagosMorosos=itemsPagos.filter(i=>i.cat==="moroso");
   const tabsConfig=[
     {id:"aldia",label:"Al día",count:pagosAlDia.length,color:"#10b981",bg:"#d1fae510",border:"#10b98130"},
-    {id:"porvencer",label:"Por vencer",count:pagosPorVencer.length,color:"#f59e0b",bg:"#fef3c710",border:"#f59e0b30"},
-    {id:"moroso",label:"Vencidos",count:pagosMorosos.length,color:"#ef4444",bg:"#fee2e210",border:"#ef444430"},
+    {id:"vencido",label:"Vencidos",count:pagosPorVencer.length,color:"#f59e0b",bg:"#fef3c710",border:"#f59e0b30"},
+    {id:"moroso",label:"Morosos",count:pagosMorosos.length,color:"#ef4444",bg:"#fee2e210",border:"#ef444430"},
   ];
-  const listaActiva=tabPagos==="aldia"?pagosAlDia:tabPagos==="porvencer"?pagosPorVencer:pagosMorosos;
-  const tabActiva=tabsConfig.find(tab=>tab.id===tabPagos);
+  const listaActiva=tabPagos==="aldia"?pagosAlDia:tabPagos==="vencido"?pagosPorVencer:pagosMorosos;
+  const tabActiva=tabsConfig.find(tab=>tab.id===tabPagos)||tabsConfig[0];
 
   return(
     <div>
@@ -810,42 +831,79 @@ const Dashboard=({clients,creditos,productos,t})=>{
           <div style={{padding:"16px 22px",maxHeight:400,overflowY:"auto"}}>
             {listaActiva.length===0?(
               <div style={{textAlign:"center",padding:"28px 0",color:t.sub}}>
-                <div style={{fontSize:32,marginBottom:8}}>{tabPagos==="aldia"?"✅":tabPagos==="porvencer"?"⏰":"🎉"}</div>
+                <div style={{fontSize:32,marginBottom:8}}>{tabPagos==="aldia"?"✅":tabPagos==="vencido"?"⏰":"🎉"}</div>
                 <div style={{fontSize:13,fontWeight:600,color:t.text}}>
-                  {tabPagos==="aldia"?"Ningún cliente paga hoy":tabPagos==="porvencer"?"Ningún vencimiento en los próximos 3 días":"No hay pagos vencidos 🎉"}
+                  {tabPagos==="aldia"?"Ningún cliente paga hoy ni en los próximos 3 días":tabPagos==="vencido"?"No hay pagos vencidos":"No hay clientes morosos"}
                 </div>
               </div>
             ):(
-              <div style={{display:"grid",gap:10}}>
+              <div style={{display:"grid",gap:8}}>
                 {listaActiva.map(c=>{
                   const clienteInfo=clients.find(cl=>cl.id===c.clienteId);
+                  const abierto=clienteExpandido===c.clienteId;
                   const diffLabel=c.diffDias===0?"Vence HOY":c.diffDias>0?`Vence en ${c.diffDias} día${c.diffDias!==1?"s":""}`:c.diffDias===-1?"Venció ayer":`Venció hace ${Math.abs(c.diffDias)} días`;
+                  const nVencidas=c.cuotasVencidas?.length||0;
                   return(
-                    <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:tabActiva.bg,borderRadius:10,border:`1px solid ${tabActiva.border}`,flexWrap:"wrap",gap:10}}>
-                      <div style={{display:"flex",alignItems:"center",gap:12}}>
-                        <div style={{width:40,height:40,borderRadius:"50%",background:tabActiva.color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:15,flexShrink:0}}>{(c.clienteNombre||"?")[0].toUpperCase()}</div>
-                        <div>
-                          <div style={{fontWeight:700,color:t.text,fontSize:14}}>{c.clienteNombre}</div>
-                          <div style={{fontSize:11,color:t.sub,display:"flex",gap:12,flexWrap:"wrap",marginTop:2}}>
-                            <span>Cuota: <strong style={{color:t.text}}>{fmt(c.valorCuota)}</strong></span>
-                            <span>Saldo: <strong style={{color:tabActiva.color}}>{fmt(c.saldoPendiente)}</strong></span>
-                            <span>{c.frecuencia}</span>
-                            <span style={{fontWeight:700,color:tabActiva.color}}>{diffLabel}</span>
+                    <div key={c.clienteId} style={{borderRadius:10,border:`1px solid ${tabActiva.border}`,overflow:"hidden"}}>
+                      <div onClick={()=>setClienteExpandido(abierto?null:c.clienteId)}
+                        style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:tabActiva.bg,cursor:"pointer",flexWrap:"wrap",gap:10}}>
+                        <div style={{display:"flex",alignItems:"center",gap:12}}>
+                          <div style={{width:40,height:40,borderRadius:"50%",background:tabActiva.color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:15,flexShrink:0}}>
+                            {(c.clienteNombre||"?")[0].toUpperCase()}
+                          </div>
+                          <div>
+                            <div style={{fontWeight:700,color:t.text,fontSize:14,display:"flex",alignItems:"center",gap:8}}>
+                              {c.clienteNombre}
+                              {nVencidas>0&&<span style={{fontSize:10,background:tabActiva.color,color:"#fff",borderRadius:20,padding:"1px 7px",fontWeight:700}}>{nVencidas} vencida{nVencidas!==1?"s":""}</span>}
+                            </div>
+                            <div style={{fontSize:11,color:t.sub,display:"flex",gap:12,flexWrap:"wrap",marginTop:2}}>
+                              <span>Próx. cuota: <strong style={{color:t.text}}>{fmt(c.proxCuota?.valorCuotaEditado||c.valorCuota)}</strong></span>
+                              <span>Saldo: <strong style={{color:tabActiva.color}}>{fmt(c.saldoPendiente)}</strong></span>
+                              <span>{c.frecuencia}</span>
+                              <span style={{fontWeight:700,color:tabActiva.color}}>{diffLabel}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                          {clienteInfo?.tel&&<a href={`https://wa.me/54${clienteInfo.tel.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:5,background:"#25D366",color:"#fff",borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:700,textDecoration:"none"}}><Icon name="whatsapp" size={13}/>WA</a>}
+                          <div style={{color:t.sub,fontSize:11,textAlign:"right"}}>
+                            <div>{c.cuotasPagadas}/{c.cuotas} cuotas</div>
+                            <div style={{color:tabActiva.color}}>{abierto?"▲ Ocultar":"▼ Ver cuotas"}</div>
                           </div>
                         </div>
                       </div>
-                      <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                        {clienteInfo?.tel&&<a href={`https://wa.me/54${clienteInfo.tel.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",gap:5,background:"#25D366",color:"#fff",borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:700,textDecoration:"none"}}><Icon name="whatsapp" size={14}/>WhatsApp</a>}
-                        <div style={{textAlign:"right"}}>
-                          <div style={{fontSize:11,color:t.sub}}>{c.cuotasPagadas}/{c.cuotas} cuotas</div>
-                          <div style={{fontSize:10,color:t.sub}}>Próx: {fmtFecha(c.proximoPago)}</div>
+                      {abierto&&(
+                        <div style={{background:t.card,borderTop:`1px solid ${tabActiva.border}`,padding:"14px 16px"}}>
+                          <div style={{fontSize:11,fontWeight:700,color:t.sub,textTransform:"uppercase",marginBottom:10}}>Cuotas del crédito</div>
+                          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                            <thead><tr style={{background:t.bg}}>{["#","Vencimiento","Valor","Pagado","Saldo","Estado"].map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",fontSize:10,fontWeight:700,color:t.sub,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+                            <tbody>
+                              {(c.detalleCuotas||[]).map((d,i)=>{
+                                const vc=d.valorCuotaEditado||c.valorCuota;
+                                const saldo=Math.max(0,vc-d.montoPagado);
+                                const estaVencida=d.fechaVenc&&new Date(d.fechaVenc)<hoy&&d.estado!=="Pagada";
+                                const colEst=d.estado==="Pagada"?"#10b981":d.estado==="Parcial"?"#f59e0b":estaVencida?"#ef4444":"#64748b";
+                                return(
+                                  <tr key={i} style={{borderTop:`1px solid ${t.border}`,background:estaVencida?"#fee2e215":"transparent"}}>
+                                    <td style={{padding:"7px 10px",fontWeight:700,color:t.text}}>{d.num}</td>
+                                    <td style={{padding:"7px 10px",color:estaVencida?"#ef4444":t.text,fontWeight:estaVencida?700:400}}>{fmtFecha(d.fechaVenc)}{estaVencida&&<span style={{fontSize:9,marginLeft:4,color:"#ef4444",fontWeight:700}}>VENCIDA</span>}</td>
+                                    <td style={{padding:"7px 10px",color:t.text}}>{fmt(vc)}{d.valorCuotaEditado&&d.valorCuotaEditado!==c.valorCuota&&<span style={{fontSize:9,color:"#f59e0b",marginLeft:3}}>+mora</span>}</td>
+                                    <td style={{padding:"7px 10px",color:d.montoPagado>0?"#10b981":t.sub,fontWeight:d.montoPagado>0?700:400}}>{fmt(d.montoPagado)}</td>
+                                    <td style={{padding:"7px 10px",color:saldo>0?"#ef4444":"#10b981",fontWeight:700}}>{fmt(saldo)}</td>
+                                    <td style={{padding:"7px 10px"}}><span style={{color:colEst,fontWeight:600,fontSize:11}}>{d.estado}</span>{d.fechaPago&&<div style={{fontSize:9,color:t.sub}}>{d.fechaPago}</div>}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </div>
-                      </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
             )}
+
           </div>
         </div>
       )}

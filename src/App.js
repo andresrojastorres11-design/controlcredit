@@ -56,7 +56,6 @@ const generatePDF=(credito)=>{
     <div class="seccion">
       <div class="seccion-titulo">Resumen financiero</div>
       <div class="seccion-body" style="text-align:center">
-        <div class="metrica"><div class="metrica-label">Capital prestado</div><div class="metrica-valor">${fmt(credito.monto)}</div></div>
         <div class="metrica"><div class="metrica-label">Valor de cuota</div><div class="metrica-valor">${fmt(credito.valorCuota)}</div></div>
         <div class="metrica"><div class="metrica-label">Ya abonado</div><div class="metrica-valor" style="color:#10b981">${fmt(credito.saldoCobrado)}</div></div>
         <div class="metrica"><div class="metrica-label">Saldo pendiente</div><div class="metrica-valor" style="color:#ef4444">${fmt(credito.saldoPendiente)}</div></div>

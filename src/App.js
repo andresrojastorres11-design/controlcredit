@@ -739,7 +739,7 @@ const Dashboard=({clients,creditos,productos,t})=>{
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:14,marginBottom:20}}>
         <MetricCard label="Plata en la calle" value={fmt(plata)} icon="coin" color="#3b82f6" sub="Capital no recuperado" t={t}/>
         <MetricCard label="Por cobrar" value={fmt(porCobrar)} icon="cartera" color="#10b981" t={t}/>
-        <MetricCard label="Ganancia esperada" value={fmt(ganEsp)} icon="creditos" color="#8b5cf6" t={t}/>
+        <MetricCard label="Ganancia esperada" value={fmt(ganEsp-ganReal)} icon="creditos" color="#8b5cf6" sub="Ganancia pendiente" t={t}/>
         <MetricCard label="Ganancia realizada" value={fmt(ganReal)} icon="check" color="#10b981" t={t}/>
         <MetricCard label="Total clientes" value={clients.length} icon="users" color="#f59e0b" t={t}/>
         <MetricCard label="Morosos" value={nMorosos} icon="alert" color="#ef4444" t={t}/>

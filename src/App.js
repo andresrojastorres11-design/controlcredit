@@ -234,6 +234,54 @@ const generatePDFCliente=(cliente,creditos,productos)=>{
   `;
   abrirPDF(html,`Cliente_${cliente.nombre}_${cliente.apellido}`);
 };
+
+// ── EXPORTAR EXCEL (CSV) ──────────────────────────────────────────────────────
+const exportarExcelCreditos=(creditos,clients)=>{
+  const activos=creditos.filter(c=>c.estado!=="Finalizado");
+  let csv="CLIENTE,DNI,TELÉFONO,ESTADO,CAPITAL,TOTAL A COBRAR,YA COBRADO,SALDO PENDIENTE,CUOTAS,CUOTAS PAGADAS,CUOTAS RESTANTES,VALOR CUOTA,FRECUENCIA,PRÓX. VENCIMIENTO,OBSERVACIONES\n";
+  activos.forEach(c=>{
+    const cliente=clients.find(cl=>cl.id===c.clienteId);
+    const restantes=c.cuotas-c.cuotasPagadas;
+    csv+=`"${c.clienteNombre}","${cliente?.dni||""}","${cliente?.tel||""}","${c.estado}","${c.monto}","${c.totalCobrar}","${c.saldoCobrado}","${c.saldoPendiente}","${c.cuotas}","${c.cuotasPagadas}","${restantes}","${c.valorCuota}","${c.frecuencia}","${fmtFecha(c.proximoPago)}","${c.comentarios||""}"\n`;
+    if(c.detalleCuotas?.length>0){
+      csv+=`"  Cuota #","Vencimiento","Valor","Pagado","Saldo","Estado",,,,,,,,\n`;
+      c.detalleCuotas.forEach(d=>{
+        const vc=d.valorCuotaEditado||c.valorCuota;
+        csv+=`"  ${d.num}","${fmtFecha(d.fechaVenc)}","${vc}","${d.montoPagado}","${Math.max(0,vc-d.montoPagado)}","${d.estado}",,,,,,,,\n`;
+      });
+      csv+=`"","","","","","","","","","","","","","",""\n`;
+    }
+  });
+  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=`ControlCredit_Creditos_${new Date().toLocaleDateString("es-AR").replace(/\//g,"-")}.csv`;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+};
+
+const exportarExcelProductos=(productos,ventasContado=[])=>{
+  const activos=productos.filter(p=>p.estado!=="Finalizado");
+  let csv="TIPO,CLIENTE,PRODUCTO,INVERSIÓN,PRECIO,GANANCIA,CUOTAS,CUOTAS PAGADAS,CUOTAS RESTANTES,VALOR CUOTA,SALDO PENDIENTE,FRECUENCIA,ESTADO\n";
+  activos.forEach(p=>{
+    const vc=p.valorCuota||Math.round(p.precioFinanciado/p.cuotas);
+    const restantes=p.cuotas-p.cuotasPagadas;
+    csv+=`"Financiado","${p.clienteNombre}","${p.producto}","${p.inversion}","${p.precioFinanciado}","${p.ganancia}","${p.cuotas}","${p.cuotasPagadas}","${restantes}","${vc}","${restantes*vc}","${p.frecuencia}","${p.estado}"\n`;
+  });
+  if(ventasContado.length>0){
+    csv+=`\nTIPO,CLIENTE,PRODUCTO,COSTO,PRECIO VENTA,GANANCIA,FECHA,,,,,,\n`;
+    ventasContado.forEach(v=>{
+      csv+=`"Contado","${v.cliente_nombre||"—"}","${v.producto}","${v.costo}","${v.precio_venta}","${v.ganancia}","${fmtFecha(v.fecha)}",,,,,,\n`;
+    });
+  }
+  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=`ControlCredit_Productos_${new Date().toLocaleDateString("es-AR").replace(/\//g,"-")}.csv`;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+};
+
 const Icon=({name,size=18})=>{
   const i={
     dashboard:<svg width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>,
@@ -1279,7 +1327,10 @@ const Creditos=({creditos,setCreditos,clients,t})=>{
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
         <div><h1 style={{fontSize:22,fontWeight:800,color:t.text,margin:"0 0 2px"}}>Créditos & Préstamos</h1><p style={{color:t.sub,margin:0,fontSize:13}}>{creditos.filter(c=>c.estado!=="Finalizado").length} activos · {creditos.length} totales</p></div>
-        <button onClick={()=>{setForm(EF);setModal(true);}} style={{background:t.accent,color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Icon name="plus" size={15}/>Nuevo crédito</button>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>exportarExcelCreditos(creditos,clients)} style={{background:"#10b981",color:"#fff",border:"none",borderRadius:10,padding:"10px 16px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>📊 Exportar Excel</button>
+          <button onClick={()=>{setForm(EF);setModal(true);}} style={{background:t.accent,color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Icon name="plus" size={15}/>Nuevo crédito</button>
+        </div>
       </div>
       <div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:200,position:"relative"}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar..." style={{width:"100%",padding:"10px 14px 10px 40px",borderRadius:10,border:`1px solid ${t.border}`,background:t.card,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/><span style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",color:t.sub}}><Icon name="search" size={16}/></span></div>
@@ -1449,6 +1500,7 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
         <div><h1 style={{fontSize:22,fontWeight:800,color:t.text,margin:"0 0 2px"}}>Productos</h1><p style={{color:t.sub,margin:0,fontSize:13}}>{productos.filter(p=>p.estado==="Activo").length} financiados · {ventasContado.length} contado</p></div>
         <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>exportarExcelProductos(productos,ventasContado)} style={{background:"#10b981",color:"#fff",border:"none",borderRadius:10,padding:"10px 16px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>📊 Exportar Excel</button>
           {tabActiva==="financiado"?<button onClick={()=>{setForm(EF);setModal(true);}} style={{background:t.accent,color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Icon name="plus" size={15}/>Nueva venta financiada</button>
           :<button onClick={()=>{setFormC(EFC);setModalContado(true);}} style={{background:"#10b981",color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Icon name="plus" size={15}/>Nueva venta contado</button>}
         </div>

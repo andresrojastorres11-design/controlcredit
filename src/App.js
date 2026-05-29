@@ -1796,6 +1796,8 @@ export default function App(){
   const [loginForm,setLoginForm]=useState({user:"",pass:""});
   const [loginErr,setLoginErr]=useState("");
   const [loadingData,setLoadingData]=useState(false);
+  // Detección automática de celular + toggle manual
+  const [mobile,setMobile]=useState(()=>window.innerWidth<768);
   const t=dark?DARK:LIGHT;
 
   const esAdmin=usuarioActual?.rol==="admin"||usuarioActual?.user==="andres";
@@ -1868,6 +1870,67 @@ export default function App(){
   ];
   const alertCount=creditos.filter(c=>c.estado==="Moroso"||c.estado==="Atrasado").length;
 
+  // ── MODO MÓVIL ────────────────────────────────────────────────────────────────
+  if(mobile){
+    return(
+      <div style={{display:"flex",flexDirection:"column",minHeight:"100vh",fontFamily:"'Segoe UI',system-ui,sans-serif",background:t.bg,color:t.text}}>
+        {/* Header móvil */}
+        <header style={{background:t.sidebar,padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 12px rgba(0,0,0,0.3)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{width:28,height:28,borderRadius:8,background:t.accent,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="coin" size={14}/></div>
+            <span style={{fontSize:14,fontWeight:900,color:"#fff"}}>Control<span style={{color:t.accent}}>Credit</span></span>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {alertCount>0&&<div style={{background:"#ef4444",color:"#fff",borderRadius:20,padding:"2px 8px",fontSize:11,fontWeight:700}}>{alertCount}</div>}
+            <button onClick={()=>setMobile(false)} style={{background:"none",border:"1px solid #ffffff20",borderRadius:6,padding:"4px 8px",cursor:"pointer",color:"#94a3b8",fontSize:10,fontWeight:600}}>🖥 PC</button>
+            <button onClick={()=>setDark(d=>!d)} style={{background:"none",border:"none",cursor:"pointer",color:"#94a3b8",padding:4}}><Icon name={dark?"sun":"moon"} size={16}/></button>
+            <div style={{width:28,height:28,borderRadius:"50%",background:t.accent,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:700,fontSize:12}}>{(usuarioActual?.nombre||"A")[0].toUpperCase()}</div>
+          </div>
+        </header>
+
+        {/* Contenido móvil */}
+        <main style={{flex:1,padding:"14px 14px 80px",overflowY:"auto"}}>
+          {screen==="dashboard"&&<Dashboard clients={clients} creditos={creditos} productos={productos} ventasContado={ventasContado} t={t}/>}
+          {screen==="clientes"&&<Clientes clients={clients} setClients={setClients} creditos={creditos} setCreditos={setCreditos} productos={productos} usuarioActual={usuarioActual} t={t}/>}
+          {screen==="creditos"&&<Creditos creditos={creditos} setCreditos={setCreditos} clients={clients} usuarioActual={usuarioActual} t={t}/>}
+          {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} usuarioActual={usuarioActual} t={t}/>}
+          {screen==="cartera"&&<Cartera creditos={creditos} productos={productos} clients={clients} t={t}/>}
+          {screen==="alertas"&&<Alertas creditos={creditos} clients={clients} t={t}/>}
+          {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t} allClients={allClients} allCreditos={allCreditos} allProductos={allProductos} allVentasContado={allVentasContado}/>}
+        </main>
+
+        {/* Barra de navegación inferior */}
+        <nav style={{position:"fixed",bottom:0,left:0,right:0,background:t.sidebar,borderTop:"1px solid #ffffff15",display:"flex",justifyContent:"space-around",padding:"6px 0 8px",zIndex:200,boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
+          {NAV.slice(0,5).map(n=>(
+            <button key={n.id} onClick={()=>setScreen(n.id)}
+              style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"4px 8px",background:"none",border:"none",cursor:"pointer",color:screen===n.id?t.accent:t.sidebarText,flex:1,position:"relative"}}>
+              <Icon name={n.icon} size={20}/>
+              <span style={{fontSize:9,fontWeight:screen===n.id?700:400,whiteSpace:"nowrap"}}>{n.label}</span>
+              {n.id==="alertas"&&alertCount>0&&<span style={{position:"absolute",top:0,right:"25%",background:"#ef4444",color:"#fff",borderRadius:10,padding:"0 4px",fontSize:9,fontWeight:700}}>{alertCount}</span>}
+            </button>
+          ))}
+          {/* Menú más */}
+          <button onClick={()=>setScreen(screen==="usuarios"?"dashboard":"usuarios")}
+            style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"4px 8px",background:"none",border:"none",cursor:"pointer",color:screen==="usuarios"?t.accent:t.sidebarText,flex:1}}>
+            <Icon name="menu" size={20}/>
+            <span style={{fontSize:9,fontWeight:400}}>Más</span>
+          </button>
+        </nav>
+
+        {/* Botón cerrar sesión flotante en menú más */}
+        {screen==="usuarios"&&(
+          <div style={{position:"fixed",bottom:70,right:14,zIndex:300}}>
+            <button onClick={()=>{setLoggedIn(false);setUsuarioActual(null);setAllClients([]);setAllCreditos([]);setAllProductos([]);}}
+              style={{background:"#ef4444",color:"#fff",border:"none",borderRadius:12,padding:"10px 16px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 4px 16px rgba(239,68,68,0.4)"}}>
+              <Icon name="logout" size={15}/>Cerrar sesión
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── MODO ESCRITORIO ───────────────────────────────────────────────────────────
   return(
     <div style={{display:"flex",minHeight:"100vh",fontFamily:"'Segoe UI',system-ui,sans-serif",background:t.bg,color:t.text}}>
       <div style={{width:sideOpen?220:64,background:t.sidebar,display:"flex",flexDirection:"column",transition:"width 0.2s",flexShrink:0,position:"sticky",top:0,height:"100vh",overflow:"hidden"}}>
@@ -1892,6 +1955,7 @@ export default function App(){
           ))}
         </nav>
         <div style={{padding:"12px 8px",borderTop:"1px solid #ffffff10"}}>
+          <button onClick={()=>setMobile(true)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:"none",cursor:"pointer",background:"transparent",color:t.sidebarText,fontSize:13,marginBottom:4}}><span style={{fontSize:16}}>📱</span>{sideOpen&&<span>Modo celular</span>}</button>
           <button onClick={()=>setDark(d=>!d)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:"none",cursor:"pointer",background:"transparent",color:t.sidebarText,fontSize:13,marginBottom:4}}><Icon name={dark?"sun":"moon"} size={18}/>{sideOpen&&<span>{dark?"Modo claro":"Modo oscuro"}</span>}</button>
           <button onClick={()=>{setLoggedIn(false);setUsuarioActual(null);setAllClients([]);setAllCreditos([]);setAllProductos([]);}} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:"none",cursor:"pointer",background:"transparent",color:"#ef4444",fontSize:13}}><Icon name="logout" size={18}/>{sideOpen&&<span>Cerrar sesión</span>}</button>
         </div>

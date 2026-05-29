@@ -642,9 +642,10 @@ const PerfilCliente=({client,creditos,productos,setCreditos,onClose,onEdit,t})=>
 const usuarioFromDB=(r)=>({id:r.id,nombre:r.nombre,user:r.user_name,rol:r.rol||"empleado",activo:r.activo!==false});
 
 // ── PANEL ADMIN USUARIOS ──────────────────────────────────────────────────────
-const AdminUsuarios=({t})=>{
+const AdminUsuarios=({t,allClients,allCreditos,allProductos,allVentasContado})=>{
   const [usuarios,setUsuarios]=useState([]);
   const [modal,setModal]=useState(false);
+  const [verEmpleado,setVerEmpleado]=useState(null);
   const [form,setForm]=useState({nombre:"",user_name:"",password:"",rol:"empleado"});
   const [loading,setLoading]=useState(false);
 
@@ -669,31 +670,91 @@ const AdminUsuarios=({t})=>{
     if(confirm("¿Eliminar usuario?")){ await sb.from("usuarios").delete().eq("id",id); setUsuarios(us=>us.filter(u=>u.id!==id)); }
   };
 
+  const getMetricas=(uid)=>{
+    const cls=(allClients||[]).filter(c=>c.usuarioId===uid);
+    const crs=(allCreditos||[]).filter(c=>c.usuarioId===uid);
+    const activos=crs.filter(c=>c.estado!=="Finalizado");
+    const ganReal=crs.reduce((s,c)=>s+(c.ganancia/c.cuotas)*c.cuotasPagadas,0)+((allVentasContado||[]).filter(v=>v.usuario_id===uid)).reduce((s,v)=>s+v.ganancia,0);
+    const morosos=cls.filter(c=>c.estado==="Moroso").length;
+    return{clientes:cls.length,activos:activos.length,ganReal,morosos,crs};
+  };
+
   return(
     <div>
+      {/* PANEL LATERAL EMPLEADO */}
+      {verEmpleado&&(
+        <div style={{position:"fixed",inset:0,zIndex:500,display:"flex",alignItems:"stretch"}}>
+          <div onClick={()=>setVerEmpleado(null)} style={{flex:1,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(3px)",cursor:"pointer"}}/>
+          <div style={{width:"min(580px,95vw)",background:t.bg,overflowY:"auto",boxShadow:"-8px 0 40px rgba(0,0,0,0.35)"}}>
+            <div style={{background:t.card,borderBottom:`1px solid ${t.border}`,padding:"16px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,zIndex:10}}>
+              <div><div style={{fontSize:16,fontWeight:800,color:t.text}}>{verEmpleado.nombre}</div><div style={{fontSize:12,color:t.sub}}>@{verEmpleado.user} · <span style={{color:"#3b82f6",fontWeight:600}}>{verEmpleado.rol}</span></div></div>
+              <button onClick={()=>setVerEmpleado(null)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:8,padding:"6px 12px",cursor:"pointer",color:t.sub,fontSize:13,fontWeight:600}}>✕ Cerrar</button>
+            </div>
+            <div style={{padding:"20px"}}>
+              {(()=>{
+                const m=getMetricas(verEmpleado.id);
+                return(
+                  <div>
+                    <h3 style={{margin:"0 0 14px",fontSize:14,fontWeight:700,color:t.text}}>📊 Métricas de {verEmpleado.nombre}</h3>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
+                      {[{label:"Clientes",value:m.clientes,color:"#f59e0b"},{label:"Créditos activos",value:m.activos,color:"#3b82f6"},{label:"Ganancia realizada",value:fmt(m.ganReal),color:"#8b5cf6"},{label:"Morosos",value:m.morosos,color:"#ef4444"}].map(({label,value,color})=>(
+                        <div key={label} style={{background:t.card,borderRadius:10,padding:"12px 16px",border:`1px solid ${t.border}`}}>
+                          <div style={{fontSize:10,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>{label}</div>
+                          <div style={{fontSize:18,fontWeight:800,color}}>{value}</div>
+                        </div>
+                      ))}
+                    </div>
+                    {m.crs.length>0?(
+                      <div style={{background:t.card,borderRadius:12,border:`1px solid ${t.border}`,overflow:"hidden"}}>
+                        <div style={{padding:"10px 16px",background:t.bg,fontSize:12,fontWeight:700,color:t.text}}>💳 Créditos activos</div>
+                        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                          <thead><tr style={{background:t.bg}}>{["Cliente","Capital","Saldo","Estado"].map(h=><th key={h} style={{padding:"7px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:t.sub,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+                          <tbody>{m.crs.filter(c=>c.estado!=="Finalizado").map(c=>(
+                            <tr key={c.id} style={{borderTop:`1px solid ${t.border}`}}>
+                              <td style={{padding:"8px 12px",fontWeight:600,color:t.text}}>{c.clienteNombre}</td>
+                              <td style={{padding:"8px 12px",color:t.text}}>{fmt(c.monto)}</td>
+                              <td style={{padding:"8px 12px",color:"#ef4444",fontWeight:700}}>{fmt(c.saldoPendiente)}</td>
+                              <td style={{padding:"8px 12px"}}><span style={{fontSize:11,fontWeight:600,color:c.estado==="Al día"?"#10b981":c.estado==="Moroso"?"#ef4444":"#f59e0b"}}>{c.estado}</span></td>
+                            </tr>
+                          ))}</tbody>
+                        </table>
+                      </div>
+                    ):<div style={{textAlign:"center",padding:"30px",color:t.sub,fontSize:13}}>Este empleado aún no tiene datos cargados.</div>}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-        <div><h1 style={{fontSize:22,fontWeight:800,color:t.text,margin:"0 0 2px"}}>👥 Panel de Usuarios</h1><p style={{color:t.sub,margin:0,fontSize:13}}>Solo visible para administradores</p></div>
+        <div><h1 style={{fontSize:22,fontWeight:800,color:t.text,margin:"0 0 2px"}}>👥 Panel de Usuarios</h1><p style={{color:t.sub,margin:0,fontSize:13}}>Tocá "Ver datos" para ver las métricas de cada empleado</p></div>
         <button onClick={()=>setModal(true)} style={{background:t.accent,color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Icon name="plus" size={15}/>Nuevo usuario</button>
       </div>
       <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse"}}>
-          <thead><tr style={{background:t.bg}}>{["Nombre","Usuario","Rol","Estado","Acciones"].map(h=><th key={h} style={{padding:"11px 15px",textAlign:"left",fontSize:11,fontWeight:700,color:t.sub,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+          <thead><tr style={{background:t.bg}}>{["Nombre","Usuario","Rol","Estado","Resumen","Acciones"].map(h=><th key={h} style={{padding:"11px 15px",textAlign:"left",fontSize:11,fontWeight:700,color:t.sub,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
           <tbody>
-            {usuarios.map(u=>(
-              <tr key={u.id} style={{borderTop:`1px solid ${t.border}`}}>
-                <td style={{padding:"12px 15px",fontWeight:600,color:t.text}}>{u.nombre}</td>
-                <td style={{padding:"12px 15px",color:t.sub,fontSize:13}}>{u.user}</td>
-                <td style={{padding:"12px 15px"}}><span style={{background:u.rol==="admin"?"#ede9fe":"#dbeafe",color:u.rol==="admin"?"#4c1d95":"#1e40af",padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:600}}>{u.rol}</span></td>
-                <td style={{padding:"12px 15px"}}><span style={{background:u.activo?"#d1fae5":"#fee2e2",color:u.activo?"#065f46":"#991b1b",padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:600}}>{u.activo?"Activo":"Inactivo"}</span></td>
-                <td style={{padding:"12px 15px"}}>
-                  <div style={{display:"flex",gap:6}}>
-                    <button onClick={()=>toggleActivo(u)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"5px 10px",cursor:"pointer",color:t.sub,fontSize:11,fontWeight:600}}>{u.activo?"Desactivar":"Activar"}</button>
-                    <button onClick={()=>del(u.id)} style={{background:"none",border:"1px solid #fca5a5",borderRadius:6,padding:"5px 8px",cursor:"pointer",color:"#ef4444"}}><Icon name="trash" size={14}/></button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {usuarios.length===0&&<tr><td colSpan={5} style={{padding:"30px",textAlign:"center",color:t.sub}}>No hay usuarios creados</td></tr>}
+            {usuarios.map(u=>{
+              const m=getMetricas(u.id);
+              return(
+                <tr key={u.id} style={{borderTop:`1px solid ${t.border}`}}>
+                  <td style={{padding:"12px 15px",fontWeight:600,color:t.text}}>{u.nombre}</td>
+                  <td style={{padding:"12px 15px",color:t.sub,fontSize:13}}>@{u.user}</td>
+                  <td style={{padding:"12px 15px"}}><span style={{background:u.rol==="admin"?"#ede9fe":"#dbeafe",color:u.rol==="admin"?"#4c1d95":"#1e40af",padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:600}}>{u.rol}</span></td>
+                  <td style={{padding:"12px 15px"}}><span style={{background:u.activo?"#d1fae5":"#fee2e2",color:u.activo?"#065f46":"#991b1b",padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:600}}>{u.activo?"Activo":"Inactivo"}</span></td>
+                  <td style={{padding:"12px 15px",fontSize:12,color:t.sub}}><span style={{color:"#3b82f6",fontWeight:600}}>{m.clientes} clientes</span> · <span style={{color:"#8b5cf6",fontWeight:600}}>{fmt(m.ganReal)}</span></td>
+                  <td style={{padding:"12px 15px"}}>
+                    <div style={{display:"flex",gap:6}}>
+                      <button onClick={()=>setVerEmpleado(u)} style={{background:"none",border:`1px solid ${t.accent}`,borderRadius:6,padding:"5px 10px",cursor:"pointer",color:t.accent,fontSize:11,fontWeight:700}}>Ver datos</button>
+                      <button onClick={()=>toggleActivo(u)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"5px 10px",cursor:"pointer",color:t.sub,fontSize:11,fontWeight:600}}>{u.activo?"Desactivar":"Activar"}</button>
+                      <button onClick={()=>del(u.id)} style={{background:"none",border:"1px solid #fca5a5",borderRadius:6,padding:"5px 8px",cursor:"pointer",color:"#ef4444"}}><Icon name="trash" size={13}/></button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {usuarios.length===0&&<tr><td colSpan={6} style={{padding:"30px",textAlign:"center",color:t.sub}}>No hay usuarios creados</td></tr>}
           </tbody>
         </table>
       </div>
@@ -702,9 +763,6 @@ const AdminUsuarios=({t})=>{
         <Field label="Nombre de usuario *" value={form.user_name} onChange={v=>setForm(f=>({...f,user_name:v}))} t={t} placeholder="Ej: maria123"/>
         <Field label="Contraseña *" value={form.password} onChange={v=>setForm(f=>({...f,password:v}))} t={t}/>
         <Field label="Rol" value={form.rol} onChange={v=>setForm(f=>({...f,rol:v}))} options={["empleado","admin"]} t={t}/>
-        <div style={{background:t.bg,borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:12,color:t.sub}}>
-          Los empleados solo ven sus propios clientes y créditos. Los admin ven todo.
-        </div>
         <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
           <button onClick={()=>setModal(false)} style={{padding:"9px 18px",borderRadius:8,border:`1px solid ${t.border}`,background:"none",color:t.sub,cursor:"pointer",fontWeight:600}}>Cancelar</button>
           <button onClick={save} disabled={loading} style={{padding:"9px 18px",borderRadius:8,border:"none",background:t.accent,color:"#fff",cursor:"pointer",fontWeight:700,opacity:loading?0.7:1}}>{loading?"Guardando...":"Crear usuario"}</button>
@@ -1741,11 +1799,12 @@ export default function App(){
   const t=dark?DARK:LIGHT;
 
   const esAdmin=usuarioActual?.rol==="admin"||usuarioActual?.user==="andres";
-  // Admin ve todo. Empleado ve solo sus datos (usuario_id === su id)
-  const clients=esAdmin?allClients:allClients.filter(c=>c.usuarioId===usuarioActual?.id);
-  const creditos=esAdmin?allCreditos:allCreditos.filter(c=>c.usuarioId===usuarioActual?.id);
-  const productos=esAdmin?allProductos:allProductos.filter(p=>p.usuarioId===usuarioActual?.id);
-  const ventasContado=esAdmin?allVentasContado:allVentasContado.filter(v=>v.usuario_id===usuarioActual?.id);
+  // Todos ven solo sus propios datos — admin NO ve todo automáticamente
+  const uid=usuarioActual?.id||0;
+  const clients=allClients.filter(c=>c.usuarioId===uid);
+  const creditos=allCreditos.filter(c=>c.usuarioId===uid);
+  const productos=allProductos.filter(p=>p.usuarioId===uid);
+  const ventasContado=allVentasContado.filter(v=>v.usuario_id===uid);
   const setClients=(fn)=>setAllClients(fn);
   const setCreditos=(fn)=>setAllCreditos(fn);
   const setProductos=(fn)=>setAllProductos(fn);
@@ -1753,33 +1812,17 @@ export default function App(){
 
   const cargarDatos=async(usuario)=>{
     setLoadingData(true);
-    const esAdminLocal=usuario?.rol==="admin"||usuario?.user==="andres";
-    if(esAdminLocal){
-      // Admin carga todo
-      const [{data:cls},{data:crs},{data:prds},{data:vcs}]=await Promise.all([
-        sb.from("clientes").select("*").order("id"),
-        sb.from("creditos").select("*").order("id"),
-        sb.from("productos").select("*").order("id"),
-        sb.from("ventas_contado").select("*").order("id"),
-      ]);
-      if(cls)setAllClients(cls.map(clientFromDB));
-      if(crs)setAllCreditos(crs.map(creditoFromDB));
-      if(prds)setAllProductos(prds.map(productoFromDB));
-      if(vcs)setAllVentasContado(vcs);
-    } else {
-      // Empleado carga solo sus datos
-      const uid=usuario?.id;
-      const [{data:cls},{data:crs},{data:prds},{data:vcs}]=await Promise.all([
-        sb.from("clientes").select("*").eq("usuario_id",uid).order("id"),
-        sb.from("creditos").select("*").eq("usuario_id",uid).order("id"),
-        sb.from("productos").select("*").eq("usuario_id",uid).order("id"),
-        sb.from("ventas_contado").select("*").eq("usuario_id",uid).order("id"),
-      ]);
-      if(cls)setAllClients(cls.map(clientFromDB));
-      if(crs)setAllCreditos(crs.map(creditoFromDB));
-      if(prds)setAllProductos(prds.map(productoFromDB));
-      if(vcs)setAllVentasContado(vcs);
-    }
+    // Siempre cargamos todo — el filtrado se hace en el frontend
+    const [{data:cls},{data:crs},{data:prds},{data:vcs}]=await Promise.all([
+      sb.from("clientes").select("*").order("id"),
+      sb.from("creditos").select("*").order("id"),
+      sb.from("productos").select("*").order("id"),
+      sb.from("ventas_contado").select("*").order("id"),
+    ]);
+    if(cls)setAllClients(cls.map(clientFromDB));
+    if(crs)setAllCreditos(crs.map(creditoFromDB));
+    if(prds)setAllProductos(prds.map(productoFromDB));
+    if(vcs)setAllVentasContado(vcs);
     setLoadingData(false);
   };
 
@@ -1871,7 +1914,7 @@ export default function App(){
           {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} usuarioActual={usuarioActual} t={t}/>}
           {screen==="cartera"&&<Cartera creditos={creditos} productos={productos} clients={clients} t={t}/>}
           {screen==="alertas"&&<Alertas creditos={creditos} clients={clients} t={t}/>}
-          {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t}/>}
+          {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t} allClients={allClients} allCreditos={allCreditos} allProductos={allProductos} allVentasContado={allVentasContado}/>}
         </main>
       </div>
     </div>

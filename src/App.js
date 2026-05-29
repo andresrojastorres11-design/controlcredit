@@ -481,10 +481,33 @@ const TablaCuotas=({credito,onActualizar,t})=>{
                     {d.fechaPago&&<div style={{fontSize:10,color:t.sub}}>{d.fechaPago}</div>}
                   </td>
                   <td style={{padding:"8px 10px"}}>
-                    <div style={{display:"flex",gap:4}}>
+                    <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
                       <button onClick={()=>abrirEditFecha(i)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"4px 7px",cursor:"pointer",color:t.sub,fontSize:10,display:"flex",alignItems:"center",gap:2}} title="Editar fecha"><Icon name="calendar" size={11}/></button>
-                      <button onClick={()=>abrirEditValor(i)} style={{background:"none",border:"1px solid #f59e0b",borderRadius:6,padding:"4px 7px",cursor:"pointer",color:"#f59e0b",fontSize:10,display:"flex",alignItems:"center",gap:2}} title="Editar valor por mora">$+</button>
-                      <button onClick={()=>abrirEditPago(i)} style={{background:"none",border:`1px solid ${t.accent2}`,borderRadius:6,padding:"4px 7px",cursor:"pointer",color:t.accent2,fontSize:10,display:"flex",alignItems:"center",gap:2}} title="Registrar pago"><Icon name="check" size={11}/></button>
+                      <button onClick={()=>abrirEditValor(i)} style={{background:"none",border:"1px solid #f59e0b",borderRadius:6,padding:"4px 7px",cursor:"pointer",color:"#f59e0b",fontSize:10,fontWeight:700}} title="Editar valor por mora">$+</button>
+                      <button onClick={()=>abrirEditPago(i)} style={{background:"none",border:`1px solid ${t.accent2}`,borderRadius:6,padding:"4px 7px",cursor:"pointer",color:t.accent2,fontSize:10,display:"flex",alignItems:"center",gap:2}} title="Editar pago parcial"><Icon name="edit" size={11}/></button>
+                      {d.estado!=="Pagada"&&<button onClick={()=>{
+                        const vc=d.valorCuotaEditado||credito.valorCuota;
+                        const nuevos=[...detalles];
+                        nuevos[i]={...nuevos[i],montoPagado:vc,estado:"Pagada",fechaPago:new Date().toLocaleDateString("es-AR")};
+                        const totalCobrado=nuevos.reduce((s,x)=>s+x.montoPagado,0);
+                        const nuevoTotal=nuevos.reduce((s,x)=>s+(x.valorCuotaEditado||credito.valorCuota),0);
+                        const totalPendiente=Math.max(0,nuevoTotal-totalCobrado);
+                        const cuotasPagadas=nuevos.filter(x=>x.estado==="Pagada").length;
+                        const proxPendiente=nuevos.find(x=>x.estado!=="Pagada");
+                        const nuevoEstado=totalPendiente<=0?"Finalizado":credito.estado==="Moroso"?"Atrasado":credito.estado;
+                        onActualizar({...credito,detalleCuotas:nuevos,saldoCobrado:totalCobrado,saldoPendiente:totalPendiente,totalCobrar:nuevoTotal,cuotasPagadas,proximoPago:proxPendiente?.fechaVenc||credito.proximoPago,estado:nuevoEstado,historial:[...credito.historial,{tipo:"pago_completo",cuota:i+1,monto:vc,fecha:new Date().toLocaleDateString("es-AR")}]});
+                      }} style={{background:"#10b981",border:"none",borderRadius:6,padding:"4px 8px",cursor:"pointer",color:"#fff",fontSize:10,fontWeight:700}} title="Marcar cuota como pagada completa">✓ Pagada</button>}
+                      {d.estado==="Pagada"&&<button onClick={()=>{
+                        if(!confirm("¿Restablecer esta cuota a pendiente?"))return;
+                        const nuevos=[...detalles];
+                        nuevos[i]={...nuevos[i],montoPagado:0,estado:"Pendiente",fechaPago:null};
+                        const totalCobrado=Math.max(0,nuevos.reduce((s,x)=>s+x.montoPagado,0));
+                        const nuevoTotal=nuevos.reduce((s,x)=>s+(x.valorCuotaEditado||credito.valorCuota),0);
+                        const totalPendiente=Math.max(0,nuevoTotal-totalCobrado);
+                        const cuotasPagadas=nuevos.filter(x=>x.estado==="Pagada").length;
+                        const proxPendiente=nuevos.find(x=>x.estado!=="Pagada");
+                        onActualizar({...credito,detalleCuotas:nuevos,saldoCobrado:totalCobrado,saldoPendiente:totalPendiente,totalCobrar:nuevoTotal,cuotasPagadas,proximoPago:proxPendiente?.fechaVenc||credito.proximoPago,estado:"Al día",historial:[...credito.historial,{tipo:"restablecer_cuota",cuota:i+1,fecha:new Date().toLocaleDateString("es-AR")}]});
+                      }} style={{background:"none",border:"1px solid #f59e0b",borderRadius:6,padding:"4px 7px",cursor:"pointer",color:"#f59e0b",fontSize:10,fontWeight:700}} title="Restablecer cuota a pendiente">↩ Reset</button>}
                     </div>
                   </td>
                 </tr>
@@ -1373,7 +1396,12 @@ const Creditos=({creditos,setCreditos,clients,usuarioActual,t})=>{
   };
 
   const eliminar=async(id)=>{
-    if(confirm("¿Eliminar este crédito?")){
+    if(confirm("¿Eliminar este crédito? Se guardará en la papelera por 24 horas.")){
+      const credito=creditos.find(c=>c.id===id);
+      if(credito){
+        // Guardar en papelera antes de eliminar
+        await sb.from("papelera").insert({tipo:"credito",datos:credito,eliminado_por:usuarioActual?.nombre||"admin"});
+      }
       await sb.from("creditos").delete().eq("id",id);
       setCreditos(cs=>cs.filter(c=>c.id!==id));
     }
@@ -1544,7 +1572,9 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
   };
 
   const del=async(id)=>{
-    if(confirm("¿Eliminar esta venta?")){
+    if(confirm("¿Eliminar esta venta? Se guardará en la papelera por 24 horas.")){
+      const producto=productos.find(p=>p.id===id);
+      if(producto) await sb.from("papelera").insert({tipo:"producto",datos:producto,eliminado_por:usuarioActual?.nombre||"admin"});
       await sb.from("productos").delete().eq("id",id);
       setProductos(ps=>ps.filter(p=>p.id!==id));
     }
@@ -1781,6 +1811,88 @@ const Alertas=({creditos,clients,t})=>{
   );
 };
 
+// ── PAPELERA ──────────────────────────────────────────────────────────────────
+const Papelera=({setCreditos,setProductos,t})=>{
+  const [items,setItems]=useState([]);
+  const [loading,setLoading]=useState(true);
+
+  useEffect(()=>{cargarPapelera();},[]); // eslint-disable-line
+
+  const cargarPapelera=async()=>{
+    setLoading(true);
+    const {data}=await sb.from("papelera").select("*").order("created_at",{ascending:false});
+    if(data){
+      const hace24hs=new Date(Date.now()-24*60*60*1000);
+      setItems(data.filter(i=>new Date(i.created_at)>hace24hs));
+    }
+    setLoading(false);
+  };
+
+  const restaurar=async(item)=>{
+    const d=item.datos;
+    if(item.tipo==="credito"){
+      const data={cliente_id:d.clienteId,cliente_nombre:d.clienteNombre,monto:d.monto,total_cobrar:d.totalCobrar,ganancia:d.ganancia,cuotas:d.cuotas,cuotas_pagadas:d.cuotasPagadas,valor_cuota:d.valorCuota,saldo_cobrado:d.saldoCobrado,saldo_pendiente:d.saldoPendiente,frecuencia:d.frecuencia,fecha_otorg:d.fechaOtorg,proximo_pago:d.proximoPago,estado:d.estado,comentarios:d.comentarios||"",historial:d.historial||[],detalle_cuotas:d.detalleCuotas||[],usuario_id:d.usuarioId||0};
+      const {data:cr}=await sb.from("creditos").insert(data).select().single();
+      if(cr)setCreditos(cs=>[...cs,creditoFromDB(cr)]);
+    } else if(item.tipo==="producto"){
+      const data={cliente_id:d.clienteId,cliente_nombre:d.clienteNombre,producto:d.producto,inversion:d.inversion,precio_financiado:d.precioFinanciado,ganancia:d.ganancia,cuotas:d.cuotas,cuotas_pagadas:d.cuotasPagadas,saldo_cobrado:d.saldoCobrado,valor_cuota:d.valorCuota,estado:d.estado,frecuencia:d.frecuencia,usuario_id:d.usuarioId||0};
+      const {data:pr}=await sb.from("productos").insert(data).select().single();
+      if(pr)setProductos(ps=>[...ps,productoFromDB(pr)]);
+    }
+    await sb.from("papelera").delete().eq("id",item.id);
+    setItems(is=>is.filter(i=>i.id!==item.id));
+    alert("Restaurado correctamente");
+  };
+
+  const eliminarDef=async(id)=>{
+    if(confirm("Eliminar definitivamente?")){ await sb.from("papelera").delete().eq("id",id); setItems(is=>is.filter(i=>i.id!==id)); }
+  };
+
+  const tiempoRestante=(createdAt)=>{
+    const diff=new Date(new Date(createdAt).getTime()+24*60*60*1000)-new Date();
+    if(diff<=0)return"Expirado";
+    const hs=Math.floor(diff/3600000);const min=Math.floor((diff%3600000)/60000);
+    return`${hs}h ${min}m`;
+  };
+
+  return(
+    <div>
+      <div style={{marginBottom:22}}><h1 style={{fontSize:22,fontWeight:800,color:t.text,margin:"0 0 4px"}}>🗑 Papelera</h1><p style={{color:t.sub,margin:0,fontSize:13}}>Los elementos eliminados se guardan 24 horas.</p></div>
+      {loading?<div style={{textAlign:"center",padding:"40px",color:t.sub}}>Cargando...</div>:items.length===0?(
+        <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"60px",textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>🗑</div><div style={{fontSize:15,fontWeight:700,color:t.text,marginBottom:6}}>La papelera está vacía</div><div style={{fontSize:13,color:t.sub}}>Los créditos y ventas que elimines aparecerán acá por 24 horas</div></div>
+      ):(
+        <div style={{display:"grid",gap:12}}>
+          {items.map(item=>{
+            const d=item.datos;const esC=item.tipo==="credito";
+            return(
+              <div key={item.id} style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"18px 22px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
+                  <div>
+                    <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
+                      <span style={{fontSize:15,fontWeight:700,color:t.text}}>{esC?d.clienteNombre:d.producto}</span>
+                      <span style={{background:esC?"#dbeafe":"#d1fae5",color:esC?"#1e40af":"#065f46",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{esC?"Crédito":"Producto"}</span>
+                    </div>
+                    <div style={{fontSize:12,color:t.sub,display:"flex",gap:14,flexWrap:"wrap"}}>
+                      {esC&&<><span>Capital: <strong>{fmt(d.monto)}</strong></span><span>Saldo: <strong style={{color:"#ef4444"}}>{fmt(d.saldoPendiente)}</strong></span></>}
+                      {!esC&&<><span>Inversión: <strong>{fmt(d.inversion)}</strong></span></>}
+                      <span>Eliminado por: <strong>{item.eliminado_por}</strong></span>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <span style={{fontSize:11,color:"#f59e0b",fontWeight:600,background:"#fef3c7",padding:"3px 8px",borderRadius:8}}>⏱ {tiempoRestante(item.created_at)}</span>
+                    <button onClick={()=>restaurar(item)} style={{background:"#10b981",color:"#fff",border:"none",borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:700,cursor:"pointer"}}>↩ Restaurar</button>
+                    <button onClick={()=>eliminarDef(item.id)} style={{background:"none",border:"1px solid #fca5a5",borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",color:"#ef4444",display:"flex",alignItems:"center"}}><Icon name="trash" size={13}/></button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── APP ROOT ──────────────────────────────────────────────────────────────────
 // ── APP ROOT ──────────────────────────────────────────────────────────────────
 export default function App(){
@@ -1867,6 +1979,7 @@ export default function App(){
     {id:"cartera",label:"Cartera",icon:"cartera"},
     {id:"alertas",label:"Alertas",icon:"alert"},
     ...(esAdmin?[{id:"usuarios",label:"Usuarios",icon:"users"}]:[]),
+    {id:"papelera",label:"Papelera",icon:"trash"},
   ];
   const alertCount=creditos.filter(c=>c.estado==="Moroso"||c.estado==="Atrasado").length;
 
@@ -1897,9 +2010,7 @@ export default function App(){
           {screen==="cartera"&&<Cartera creditos={creditos} productos={productos} clients={clients} t={t}/>}
           {screen==="alertas"&&<Alertas creditos={creditos} clients={clients} t={t}/>}
           {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t} allClients={allClients} allCreditos={allCreditos} allProductos={allProductos} allVentasContado={allVentasContado}/>}
-        </main>
-
-        {/* Barra de navegación inferior */}
+          {screen==="papelera"&&<Papelera setCreditos={setCreditos} setProductos={setProductos} t={t}/>}
         <nav style={{position:"fixed",bottom:0,left:0,right:0,background:t.sidebar,borderTop:"1px solid #ffffff15",display:"flex",justifyContent:"space-around",padding:"6px 0 8px",zIndex:200,boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
           {NAV.slice(0,5).map(n=>(
             <button key={n.id} onClick={()=>setScreen(n.id)}
@@ -1979,6 +2090,7 @@ export default function App(){
           {screen==="cartera"&&<Cartera creditos={creditos} productos={productos} clients={clients} t={t}/>}
           {screen==="alertas"&&<Alertas creditos={creditos} clients={clients} t={t}/>}
           {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t} allClients={allClients} allCreditos={allCreditos} allProductos={allProductos} allVentasContado={allVentasContado}/>}
+          {screen==="papelera"&&<Papelera setCreditos={setCreditos} setProductos={setProductos} t={t}/>}
         </main>
       </div>
     </div>

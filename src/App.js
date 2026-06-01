@@ -24,7 +24,7 @@ const crearDetalleCuotas=(fechaOtorg,frecuencia,cantCuotas,valorCuota)=>{const f
 // Helpers para convertir entre snake_case (Supabase) y camelCase (App)
 const clientFromDB=(r)=>({id:r.id,nombre:r.nombre,apellido:r.apellido,dni:r.dni||"",email:r.email||"",tel:r.tel||"",ciudad:r.ciudad||"",provincia:r.provincia||"",estado:r.estado||"Al día",score:r.score||75,sueldo:r.sueldo||"",ocupacion:r.ocupacion||"",empresa:r.empresa||"",estadoCivil:r.estado_civil||"",nacimiento:r.nacimiento||"",notas:r.notas||"",usuarioId:r.usuario_id||0,dniFrenteUrl:r.dni_frente||"",dniDorsoUrl:r.dni_dorso||""});
 const creditoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,monto:r.monto,totalCobrar:r.total_cobrar,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,valorCuota:r.valor_cuota,saldoCobrado:r.saldo_cobrado||0,saldoPendiente:r.saldo_pendiente,frecuencia:r.frecuencia,fechaOtorg:r.fecha_otorg,proximoPago:r.proximo_pago,estado:r.estado,comentarios:r.comentarios||"",historial:r.historial||[],detalleCuotas:r.detalle_cuotas||[],usuarioId:r.usuario_id||0,pagareUrl:r.pagare_url||""});
-const productoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,producto:r.producto,inversion:r.inversion,precioFinanciado:r.precio_financiado,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,saldoCobrado:r.saldo_cobrado||0,valorCuota:r.valor_cuota,estado:r.estado,frecuencia:r.frecuencia,usuarioId:r.usuario_id||0});
+const productoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,producto:r.producto,inversion:r.inversion,precioFinanciado:r.precio_financiado,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,saldoCobrado:r.saldo_cobrado||0,saldoPendiente:r.saldo_pendiente||r.precio_financiado||0,valorCuota:r.valor_cuota||Math.round((r.precio_financiado||0)/(r.cuotas||1)),estado:r.estado,frecuencia:r.frecuencia,usuarioId:r.usuario_id||0,detalleCuotas:r.detalle_cuotas||[],fechaOtorg:r.fecha_otorg||"",proximoPago:r.proximo_pago||""});
 
 // ── PDF ENGINE ────────────────────────────────────────────────────────────────
 const abrirPDF=(html,nombre)=>{
@@ -1668,13 +1668,16 @@ const Creditos=({creditos,setCreditos,clients,usuarioActual,t})=>{
 const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,usuarioActual,t})=>{
   const [modal,setModal]=useState(false);
   const [modalContado,setModalContado]=useState(false);
+  const [editModal,setEditModal]=useState(false);
+  const [productoEditando,setProductoEditando]=useState(null);
   const [tabActiva,setTabActiva]=useState("financiado");
+  const [expandido,setExpandido]=useState(null);
   const [loading,setLoading]=useState(false);
-  const EF={clienteId:"",producto:"",inversion:"",precioFinanciado:"",cuotas:"",frecuencia:"Mensual",estado:"Activo"};
+  const EF={clienteId:"",producto:"",inversion:"",precioFinanciado:"",cuotas:"",frecuencia:"Mensual",estado:"Activo",fechaOtorg:new Date().toISOString().slice(0,10)};
   const [form,setForm]=useState(EF);
   const EFC={producto:"",clienteNombre:"",costo:"",precioVenta:"",fecha:new Date().toISOString().slice(0,10),notas:""};
   const [formC,setFormC]=useState(EFC);
-  const clienteOpts=[{value:"",label:"— Seleccionar cliente —"},...clients.map(c=>({value:c.id,label:`${c.nombre} ${c.apellido}`}))];
+  const [formEdit,setFormEdit]=useState({inversion:"",precioFinanciado:"",cuotas:"",frecuencia:"Mensual",estado:"Activo"});
 
   const saveContado=async()=>{
     if(!formC.producto||!formC.costo||!formC.precioVenta)return;
@@ -1693,12 +1696,14 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
   const save=async()=>{
     if(!form.clienteId||!form.producto||!form.inversion||!form.cuotas)return;
     const client=clients.find(c=>c.id===+form.clienteId);
+    if(!client)return;
     setLoading(true);
     const vc=Math.round(+form.precioFinanciado/+form.cuotas);
-    const data={cliente_id:+form.clienteId,cliente_nombre:`${client.nombre} ${client.apellido}`,producto:form.producto,inversion:+form.inversion,precio_financiado:+form.precioFinanciado,ganancia:+form.precioFinanciado-+form.inversion,cuotas:+form.cuotas,cuotas_pagadas:0,saldo_cobrado:0,valor_cuota:vc,estado:form.estado,frecuencia:form.frecuencia,usuario_id:usuarioActual?.id||0};
+    const det=crearDetalleCuotas(form.fechaOtorg,form.frecuencia,+form.cuotas,vc);
+    const data={cliente_id:+form.clienteId,cliente_nombre:`${client.nombre} ${client.apellido}`,producto:form.producto,inversion:+form.inversion,precio_financiado:+form.precioFinanciado,ganancia:+form.precioFinanciado-+form.inversion,cuotas:+form.cuotas,cuotas_pagadas:0,saldo_cobrado:0,valor_cuota:vc,estado:form.estado,frecuencia:form.frecuencia,usuario_id:usuarioActual?.id||0,detalle_cuotas:det,fecha_otorg:form.fechaOtorg,proximo_pago:det[0]?.fechaVenc||""};
     const {data:created}=await sb.from("productos").insert(data).select().single();
     if(created)setProductos(ps=>[...ps,productoFromDB(created)]);
-    setLoading(false);setModal(false);
+    setLoading(false);setModal(false);setForm(EF);
   };
 
   const del=async(id)=>{
@@ -1710,13 +1715,45 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
     }
   };
 
+  const abrirEdicion=(p)=>{
+    setProductoEditando(p);
+    setFormEdit({inversion:p.inversion,precioFinanciado:p.precioFinanciado,cuotas:p.cuotas,frecuencia:p.frecuencia,estado:p.estado});
+    setEditModal(true);
+  };
+
+  const guardarEdicion=async()=>{
+    if(!productoEditando)return;
+    setLoading(true);
+    const nuevoVC=Math.round(+formEdit.precioFinanciado/+formEdit.cuotas);
+    const nuevaGan=+formEdit.precioFinanciado-+formEdit.inversion;
+    const cobrado=productoEditando.saldoCobrado||0;
+    const pendiente=Math.max(0,+formEdit.precioFinanciado-cobrado);
+    const cambioEst=+formEdit.cuotas!==productoEditando.cuotas||formEdit.frecuencia!==productoEditando.frecuencia;
+    let det=productoEditando.detalleCuotas||[];
+    if(cambioEst){
+      det=crearDetalleCuotas(productoEditando.fechaOtorg||new Date().toISOString().slice(0,10),formEdit.frecuencia,+formEdit.cuotas,nuevoVC);
+      for(let i=0;i<Math.min(productoEditando.cuotasPagadas,det.length);i++){
+        det[i]={...det[i],estado:"Pagada",montoPagado:nuevoVC,fechaPago:new Date().toLocaleDateString("es-AR")};
+      }
+    }
+    const prox=det.find(d=>d.estado!=="Pagada");
+    await sb.from("productos").update({inversion:+formEdit.inversion,precio_financiado:+formEdit.precioFinanciado,ganancia:nuevaGan,cuotas:+formEdit.cuotas,valor_cuota:nuevoVC,saldo_pendiente:pendiente,frecuencia:formEdit.frecuencia,estado:formEdit.estado,detalle_cuotas:det,proximo_pago:prox?.fechaVenc||""}).eq("id",productoEditando.id);
+    setProductos(ps=>ps.map(p=>p.id===productoEditando.id?{...p,inversion:+formEdit.inversion,precioFinanciado:+formEdit.precioFinanciado,ganancia:nuevaGan,cuotas:+formEdit.cuotas,valorCuota:nuevoVC,saldoPendiente:pendiente,frecuencia:formEdit.frecuencia,estado:formEdit.estado,detalleCuotas:det,proximoPago:prox?.fechaVenc||""}:p));
+    setLoading(false);setEditModal(false);setProductoEditando(null);
+  };
+
+  const actualizarProducto=async(prod)=>{
+    await sb.from("productos").update({cuotas_pagadas:prod.cuotasPagadas,saldo_cobrado:prod.saldoCobrado,saldo_pendiente:prod.saldoPendiente,proximo_pago:prod.proximoPago,estado:prod.estado,detalle_cuotas:prod.detalleCuotas}).eq("id",prod.id);
+    setProductos(ps=>ps.map(p=>p.id===prod.id?prod:p));
+  };
+
   const gananciaContado=ventasContado.reduce((s,v)=>s+v.ganancia,0);
+  const vcForm=form.cuotas&&form.precioFinanciado?Math.round(+form.precioFinanciado/+form.cuotas):0;
 
   return(
     <div>
-      {/* HEADER CON TABS */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
-        <div><h1 style={{fontSize:22,fontWeight:800,color:t.text,margin:"0 0 2px"}}>Productos</h1><p style={{color:t.sub,margin:0,fontSize:13}}>{productos.filter(p=>p.estado==="Activo").length} financiados · {ventasContado.length} contado</p></div>
+        <div><h1 style={{fontSize:22,fontWeight:800,color:t.text,margin:"0 0 2px"}}>Productos</h1><p style={{color:t.sub,margin:0,fontSize:13}}>{productos.filter(p=>p.estado!=="Finalizado").length} financiados activos · {ventasContado.length} contado</p></div>
         <div style={{display:"flex",gap:8}}>
           <button onClick={()=>exportarExcelProductos(productos,ventasContado)} style={{background:"#10b981",color:"#fff",border:"none",borderRadius:10,padding:"10px 16px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>📊 Exportar Excel</button>
           {tabActiva==="financiado"?<button onClick={()=>{setForm(EF);setModal(true);}} style={{background:t.accent,color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Icon name="plus" size={15}/>Nueva venta financiada</button>
@@ -1724,7 +1761,6 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
         </div>
       </div>
 
-      {/* TABS */}
       <div style={{display:"flex",gap:0,borderBottom:`1px solid ${t.border}`,marginBottom:20}}>
         {[{id:"financiado",label:"💳 Venta Financiada",color:"#3b82f6"},{id:"contado",label:"💵 Venta de Contado",color:"#10b981"}].map(tab=>(
           <button key={tab.id} onClick={()=>setTabActiva(tab.id)}
@@ -1734,54 +1770,78 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
         ))}
       </div>
 
-      {/* VENTA FINANCIADA */}
+      {/* VENTA FINANCIADA — igual a créditos */}
       {tabActiva==="financiado"&&(
         productos.length===0?<div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"60px",textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>🛒</div><div style={{fontSize:15,fontWeight:700,color:t.text,marginBottom:6}}>No hay ventas financiadas</div><button onClick={()=>{setForm(EF);setModal(true);}} style={{background:t.accent,color:"#fff",border:"none",borderRadius:10,padding:"10px 20px",fontWeight:700,cursor:"pointer",marginTop:10}}>+ Nueva venta</button></div>:(
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:16}}>
-          {productos.map(p=>{
-            const restantes=p.cuotas-p.cuotasPagadas;
-            const saldo=restantes*(p.valorCuota||Math.round(p.precioFinanciado/p.cuotas));
-            const pct=Math.round((p.cuotasPagadas/p.cuotas)*100);
-            const rent=p.inversion>0?Math.round((p.ganancia/p.inversion)*100):0;
-            return(
-              <div key={p.id} style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"20px 22px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
-                  <div><div style={{fontWeight:700,fontSize:15,color:t.text}}>{p.producto}</div><div style={{fontSize:12,color:t.sub}}>{p.clienteNombre} · <span style={{fontWeight:600,color:t.accent}}>{p.frecuencia}</span></div></div>
-                  <div style={{display:"flex",gap:6,alignItems:"flex-start"}}><Badge status={p.estado}/><button onClick={()=>del(p.id)} style={{background:"none",border:"1px solid #fca5a5",borderRadius:6,padding:"4px 6px",cursor:"pointer",color:"#ef4444"}}><Icon name="trash" size={13}/></button></div>
+          <div style={{display:"grid",gap:14}}>
+            {productos.map(p=>{
+              const pct=Math.round((p.cuotasPagadas/p.cuotas)*100);
+              const exp=expandido===p.id;
+              return(
+                <div key={p.id} style={{background:t.card,borderRadius:14,border:`1px solid ${p.estado==="Moroso"?"#fca5a5":p.estado==="Atrasado"?"#fcd34d":t.border}`,overflow:"hidden"}}>
+                  <div style={{padding:"18px 22px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
+                      <div style={{flex:1,minWidth:200}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+                          <span style={{fontSize:15,fontWeight:700,color:t.text}}>{p.producto}</span>
+                          <Badge status={p.estado}/>
+                          <span style={{fontSize:11,color:t.sub,background:t.bg,padding:"2px 8px",borderRadius:6,fontWeight:600}}>{p.frecuencia}</span>
+                        </div>
+                        <div style={{fontSize:12,color:t.sub,marginBottom:4}}>{p.clienteNombre}</div>
+                        <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>
+                          <span style={{fontSize:12,color:t.sub}}>Inversión: <strong style={{color:t.text}}>{fmt(p.inversion)}</strong></span>
+                          <span style={{fontSize:12,color:t.sub}}>Financiado: <strong style={{color:t.text}}>{fmt(p.precioFinanciado)}</strong></span>
+                          <span style={{fontSize:12,color:t.sub}}>Cobrado: <strong style={{color:t.accent2}}>{fmt(p.saldoCobrado)}</strong></span>
+                          <span style={{fontSize:12,color:t.sub}}>Pendiente: <strong style={{color:"#ef4444"}}>{fmt(p.saldoPendiente)}</strong></span>
+                          <span style={{fontSize:12,color:t.sub}}>Cuota: <strong style={{color:t.text}}>{fmt(p.valorCuota)}</strong></span>
+                        </div>
+                      </div>
+                      <div style={{display:"flex",gap:7,flexWrap:"wrap",alignItems:"center"}}>
+                        <button onClick={()=>setExpandido(exp?null:p.id)} style={{background:exp?t.accent:"none",border:`1px solid ${t.accent}`,color:exp?"#fff":t.accent,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><Icon name="calendar" size={13}/>{exp?"Ocultar":"Ver cuotas"}</button>
+                        <button onClick={()=>abrirEdicion(p)} style={{background:"none",border:`1px solid ${t.border}`,color:t.sub,borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:3}} title="Editar"><Icon name="edit" size={13}/></button>
+                        <button onClick={()=>generatePDF({...p,clienteNombre:p.clienteNombre,monto:p.inversion,totalCobrar:p.precioFinanciado,valorCuota:p.valorCuota,saldoCobrado:p.saldoCobrado,saldoPendiente:p.saldoPendiente,cuotasPagadas:p.cuotasPagadas,cuotas:p.cuotas,fechaOtorg:p.fechaOtorg,proximoPago:p.proximoPago,frecuencia:p.frecuencia,estado:p.estado,detalleCuotas:p.detalleCuotas||[]})} style={{background:"none",border:`1px solid ${t.border}`,color:t.sub,borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}><Icon name="pdf" size={13}/></button>
+                        <button onClick={()=>del(p.id)} style={{background:"none",border:"1px solid #fca5a5",color:"#ef4444",borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center"}}><Icon name="trash" size={13}/></button>
+                      </div>
+                    </div>
+                    <div style={{marginTop:14}}>
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:11,color:t.sub}}>{p.cuotasPagadas}/{p.cuotas} cuotas</span><span style={{fontSize:11,fontWeight:700,color:t.text}}>{pct}%</span></div>
+                      <div style={{height:7,borderRadius:4,background:t.border,overflow:"hidden"}}><div style={{width:`${pct}%`,height:"100%",background:pct>=100?t.accent2:pct>50?t.accent:"#f59e0b",borderRadius:4,transition:"width 0.5s"}}/></div>
+                    </div>
+                  </div>
+                  {exp&&<div style={{borderTop:`1px solid ${t.border}`,padding:"16px 22px",background:t.bg}}>
+                    <div style={{fontSize:11,fontWeight:700,color:t.sub,textTransform:"uppercase",marginBottom:10}}>Cronograma de cuotas</div>
+                    {(!p.detalleCuotas||p.detalleCuotas.length===0)?(
+                      <div style={{textAlign:"center",padding:"16px"}}>
+                        <div style={{fontSize:13,color:t.sub,marginBottom:10}}>Sin cuotas generadas</div>
+                        <button onClick={async()=>{
+                          const vc=p.valorCuota||Math.round(p.precioFinanciado/p.cuotas);
+                          const det=crearDetalleCuotas(p.fechaOtorg||new Date().toISOString().slice(0,10),p.frecuencia,p.cuotas,vc);
+                          await sb.from("productos").update({detalle_cuotas:det}).eq("id",p.id);
+                          actualizarProducto({...p,detalleCuotas:det});
+                        }} style={{background:t.accent,color:"#fff",border:"none",borderRadius:8,padding:"9px 18px",fontWeight:700,fontSize:13,cursor:"pointer"}}>✨ Generar cuotas</button>
+                      </div>
+                    ):(
+                      <TablaCuotas credito={{...p,monto:p.inversion,totalCobrar:p.precioFinanciado,valorCuota:p.valorCuota,historial:[]}} onActualizar={actualizarProducto} t={t}/>
+                    )}
+                  </div>}
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-                  <div style={{background:t.bg,borderRadius:8,padding:"8px 12px"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:600}}>Inversión</div><div style={{fontSize:14,fontWeight:700,color:t.text}}>{fmt(p.inversion)}</div></div>
-                  <div style={{background:t.bg,borderRadius:8,padding:"8px 12px"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:600}}>Financiado</div><div style={{fontSize:14,fontWeight:700,color:t.text}}>{fmt(p.precioFinanciado)}</div></div>
-                  <div style={{background:t.bg,borderRadius:8,padding:"8px 12px"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:600}}>Ganancia</div><div style={{fontSize:14,fontWeight:700,color:t.accent2}}>{fmt(p.ganancia)}</div></div>
-                  <div style={{background:t.bg,borderRadius:8,padding:"8px 12px"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:600}}>Pendiente</div><div style={{fontSize:14,fontWeight:700,color:"#ef4444"}}>{fmt(saldo)}</div></div>
-                </div>
-                <div style={{fontSize:12,color:t.sub,marginBottom:8}}>{p.cuotasPagadas}/{p.cuotas} cuotas · Rentab.: <strong style={{color:"#8b5cf6"}}>{rent}%</strong></div>
-                <div style={{height:6,borderRadius:3,background:t.border,overflow:"hidden"}}><div style={{width:`${pct}%`,height:"100%",background:pct>=100?t.accent2:t.accent,borderRadius:3}}/></div>
-                <div style={{marginTop:4,textAlign:"right",fontSize:11,color:t.sub}}>{pct}%</div>
-              </div>
-            );
-          })}
-        </div>
-      ))}
+              );
+            })}
+          </div>
+        )
+      )}
 
       {/* VENTA DE CONTADO */}
       {tabActiva==="contado"&&(
         <div>
-          {/* Resumen ganancia contado */}
           {ventasContado.length>0&&(
             <div style={{background:"#10b98115",border:"1px solid #10b98130",borderRadius:12,padding:"14px 18px",marginBottom:16,display:"flex",gap:24,alignItems:"center"}}>
-              <div><div style={{fontSize:10,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Total ventas contado</div><div style={{fontSize:18,fontWeight:800,color:t.text}}>{ventasContado.length}</div></div>
-              <div><div style={{fontSize:10,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Ganancia total contado</div><div style={{fontSize:18,fontWeight:800,color:"#10b981"}}>{fmt(gananciaContado)}</div></div>
+              <div><div style={{fontSize:10,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Total ventas</div><div style={{fontSize:18,fontWeight:800,color:t.text}}>{ventasContado.length}</div></div>
+              <div><div style={{fontSize:10,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Ganancia total</div><div style={{fontSize:18,fontWeight:800,color:"#10b981"}}>{fmt(gananciaContado)}</div></div>
               <div><div style={{fontSize:10,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Inversión total</div><div style={{fontSize:18,fontWeight:800,color:t.text}}>{fmt(ventasContado.reduce((s,v)=>s+v.costo,0))}</div></div>
             </div>
           )}
-          {ventasContado.length===0?(
-            <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"60px",textAlign:"center"}}>
-              <div style={{fontSize:40,marginBottom:12}}>💵</div>
-              <div style={{fontSize:15,fontWeight:700,color:t.text,marginBottom:6}}>No hay ventas de contado</div>
-              <button onClick={()=>{setFormC(EFC);setModalContado(true);}} style={{background:"#10b981",color:"#fff",border:"none",borderRadius:10,padding:"10px 20px",fontWeight:700,cursor:"pointer",marginTop:10}}>+ Nueva venta contado</button>
-            </div>
-          ):(
+          {ventasContado.length===0?<div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"60px",textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>💵</div><div style={{fontSize:15,fontWeight:700,color:t.text,marginBottom:6}}>No hay ventas de contado</div><button onClick={()=>{setFormC(EFC);setModalContado(true);}} style={{background:"#10b981",color:"#fff",border:"none",borderRadius:10,padding:"10px 20px",fontWeight:700,cursor:"pointer",marginTop:10}}>+ Nueva venta contado</button></div>:(
             <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:"hidden"}}>
               <table style={{width:"100%",borderCollapse:"collapse"}}>
                 <thead><tr style={{background:t.bg}}>{["Producto","Cliente","Costo","Precio venta","Ganancia","Rentab.","Fecha",""].map(h=><th key={h} style={{padding:"11px 15px",textAlign:"left",fontSize:11,fontWeight:700,color:t.sub,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
@@ -1812,47 +1872,76 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
       <Modal open={modal} onClose={()=>setModal(false)} title="Nueva venta financiada" t={t}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
           <div style={{gridColumn:"1/-1"}}><ClienteBuscador clients={clients} t={t} onSelect={c=>setForm(f=>({...f,clienteId:c?c.id:""}))}/></div>
-          <div style={{gridColumn:"1/-1"}}><Field label="Producto *" value={form.producto} onChange={v=>setForm(f=>({...f,producto:v}))} t={t}/></div>
-          <Field label="Inversión propia ($) *" value={form.inversion} onChange={v=>setForm(f=>({...f,inversion:v}))} type="number" t={t}/>
+          <div style={{gridColumn:"1/-1"}}><Field label="Producto *" value={form.producto} onChange={v=>setForm(f=>({...f,producto:v}))} t={t} placeholder="Ej: iPhone 15, Heladera..."/></div>
+          <Field label="Tu inversión ($) *" value={form.inversion} onChange={v=>setForm(f=>({...f,inversion:v}))} type="number" t={t}/>
           <Field label="Precio financiado ($)" value={form.precioFinanciado} onChange={v=>setForm(f=>({...f,precioFinanciado:v}))} type="number" t={t}/>
           <Field label="Cuotas *" value={form.cuotas} onChange={v=>setForm(f=>({...f,cuotas:v}))} type="number" t={t}/>
           <Field label="Frecuencia" value={form.frecuencia} onChange={v=>setForm(f=>({...f,frecuencia:v}))} options={FRECUENCIAS} t={t}/>
-          <Field label="Estado" value={form.estado} onChange={v=>setForm(f=>({...f,estado:v}))} options={["Activo","Finalizado","Atrasado"]} t={t}/>
+          <Field label="Fecha otorgamiento" value={form.fechaOtorg} onChange={v=>setForm(f=>({...f,fechaOtorg:v}))} type="date" t={t}/>
+          <Field label="Estado" value={form.estado} onChange={v=>setForm(f=>({...f,estado:v}))} options={["Activo","Atrasado","Moroso"]} t={t}/>
         </div>
-        {form.inversion&&form.precioFinanciado&&<div style={{background:t.bg,borderRadius:10,padding:"12px 16px",marginBottom:14,fontSize:12,display:"flex",gap:20}}>
-          <span>Ganancia: <strong style={{color:t.accent2}}>{fmt(+form.precioFinanciado-+form.inversion)}</strong></span>
-          <span>Rentabilidad: <strong style={{color:"#8b5cf6"}}>{Math.round(((+form.precioFinanciado-+form.inversion)/(+form.inversion||1))*100)}%</strong></span>
-          {form.cuotas&&<span>Cuota: <strong style={{color:t.accent}}>{fmt(Math.round(+form.precioFinanciado/+form.cuotas))}</strong></span>}
+        {form.inversion&&form.precioFinanciado&&form.cuotas&&<div style={{background:t.bg,borderRadius:10,padding:"12px 16px",marginBottom:14,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+          <div style={{textAlign:"center"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:700,marginBottom:2}}>Cuota</div><div style={{fontSize:16,fontWeight:800,color:t.accent}}>{fmt(vcForm)}</div></div>
+          <div style={{textAlign:"center"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:700,marginBottom:2}}>Ganancia</div><div style={{fontSize:16,fontWeight:800,color:t.accent2}}>{fmt(+form.precioFinanciado-+form.inversion)}</div></div>
+          <div style={{textAlign:"center"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:700,marginBottom:2}}>Rentab.</div><div style={{fontSize:16,fontWeight:800,color:"#8b5cf6"}}>{Math.round(((+form.precioFinanciado-+form.inversion)/(+form.inversion||1))*100)}%</div></div>
         </div>}
         <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
           <button onClick={()=>setModal(false)} style={{padding:"9px 18px",borderRadius:8,border:`1px solid ${t.border}`,background:"none",color:t.sub,cursor:"pointer",fontWeight:600}}>Cancelar</button>
           <button onClick={save} disabled={loading} style={{padding:"9px 18px",borderRadius:8,border:"none",background:t.accent,color:"#fff",cursor:"pointer",fontWeight:700,opacity:loading?0.7:1}}>{loading?"Guardando...":"Crear venta"}</button>
         </div>
       </Modal>
+
+      {/* MODAL EDITAR VENTA */}
+      <Modal open={editModal} onClose={()=>setEditModal(false)} title={`Editar — ${productoEditando?.producto}`} t={t}>
+        {productoEditando&&(
+          <div>
+            <div style={{background:t.bg,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,color:t.sub}}>
+              Ya cobrado: <strong style={{color:t.accent2}}>{fmt(productoEditando.saldoCobrado)}</strong> · Cuotas pagadas: <strong>{productoEditando.cuotasPagadas}/{productoEditando.cuotas}</strong>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
+              <Field label="Inversión ($)" value={formEdit.inversion} onChange={v=>setFormEdit(f=>({...f,inversion:v}))} type="number" t={t}/>
+              <Field label="Precio financiado ($)" value={formEdit.precioFinanciado} onChange={v=>setFormEdit(f=>({...f,precioFinanciado:v}))} type="number" t={t}/>
+              <Field label="Cuotas" value={formEdit.cuotas} onChange={v=>setFormEdit(f=>({...f,cuotas:v}))} type="number" t={t}/>
+              <Field label="Frecuencia" value={formEdit.frecuencia} onChange={v=>setFormEdit(f=>({...f,frecuencia:v}))} options={FRECUENCIAS} t={t}/>
+              <Field label="Estado" value={formEdit.estado} onChange={v=>setFormEdit(f=>({...f,estado:v}))} options={["Activo","Atrasado","Moroso","Finalizado"]} t={t}/>
+            </div>
+            {formEdit.precioFinanciado&&formEdit.cuotas&&<div style={{background:t.bg,borderRadius:10,padding:"12px 16px",marginBottom:14,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+              <div style={{textAlign:"center"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:700,marginBottom:2}}>Nueva cuota</div><div style={{fontSize:16,fontWeight:800,color:t.accent}}>{fmt(Math.round(+formEdit.precioFinanciado/+formEdit.cuotas))}</div></div>
+              <div style={{textAlign:"center"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:700,marginBottom:2}}>Nueva ganancia</div><div style={{fontSize:16,fontWeight:800,color:t.accent2}}>{fmt(+formEdit.precioFinanciado-+formEdit.inversion)}</div></div>
+              <div style={{textAlign:"center"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:700,marginBottom:2}}>Nuevo pendiente</div><div style={{fontSize:16,fontWeight:800,color:"#ef4444"}}>{fmt(Math.max(0,+formEdit.precioFinanciado-productoEditando.saldoCobrado))}</div></div>
+            </div>}
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+              <button onClick={()=>setEditModal(false)} style={{padding:"9px 18px",borderRadius:8,border:`1px solid ${t.border}`,background:"none",color:t.sub,cursor:"pointer",fontWeight:600}}>Cancelar</button>
+              <button onClick={guardarEdicion} disabled={loading} style={{padding:"9px 18px",borderRadius:8,border:"none",background:t.accent,color:"#fff",cursor:"pointer",fontWeight:700,opacity:loading?0.7:1}}>{loading?"Guardando...":"Guardar"}</button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       {/* MODAL NUEVA VENTA CONTADO */}
       <Modal open={modalContado} onClose={()=>setModalContado(false)} title="Nueva venta de contado" t={t}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
-          <div style={{gridColumn:"1/-1"}}><Field label="Producto *" value={formC.producto} onChange={v=>setFormC(f=>({...f,producto:v}))} t={t} placeholder="Ej: iPhone 14, Heladera Samsung..."/></div>
+          <div style={{gridColumn:"1/-1"}}><Field label="Producto *" value={formC.producto} onChange={v=>setFormC(f=>({...f,producto:v}))} t={t} placeholder="Ej: iPhone 14..."/></div>
           <div style={{gridColumn:"1/-1"}}><Field label="Nombre del cliente (opcional)" value={formC.clienteNombre} onChange={v=>setFormC(f=>({...f,clienteNombre:v}))} t={t}/></div>
-          <Field label="Costo / lo que pagaste ($) *" value={formC.costo} onChange={v=>setFormC(f=>({...f,costo:v}))} type="number" t={t}/>
+          <Field label="Costo ($) *" value={formC.costo} onChange={v=>setFormC(f=>({...f,costo:v}))} type="number" t={t}/>
           <Field label="Precio de venta ($) *" value={formC.precioVenta} onChange={v=>setFormC(f=>({...f,precioVenta:v}))} type="number" t={t}/>
-          <Field label="Fecha de venta" value={formC.fecha} onChange={v=>setFormC(f=>({...f,fecha:v}))} type="date" t={t}/>
+          <Field label="Fecha" value={formC.fecha} onChange={v=>setFormC(f=>({...f,fecha:v}))} type="date" t={t}/>
         </div>
-        {formC.costo&&formC.precioVenta&&(
-          <div style={{background:t.bg,borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",gap:20,fontSize:12}}>
-            <span>Ganancia: <strong style={{color:"#10b981",fontSize:15}}>{fmt(+formC.precioVenta-+formC.costo)}</strong></span>
-            <span>Rentabilidad: <strong style={{color:"#8b5cf6"}}>{Math.round(((+formC.precioVenta-+formC.costo)/(+formC.costo||1))*100)}%</strong></span>
-          </div>
-        )}
+        {formC.costo&&formC.precioVenta&&<div style={{background:t.bg,borderRadius:10,padding:"12px 16px",marginBottom:14,fontSize:12,display:"flex",gap:20}}>
+          <span>Ganancia: <strong style={{color:"#10b981",fontSize:15}}>{fmt(+formC.precioVenta-+formC.costo)}</strong></span>
+          <span>Rentabilidad: <strong style={{color:"#8b5cf6"}}>{Math.round(((+formC.precioVenta-+formC.costo)/(+formC.costo||1))*100)}%</strong></span>
+        </div>}
         <Field label="Notas" value={formC.notas} onChange={v=>setFormC(f=>({...f,notas:v}))} t={t}/>
         <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
           <button onClick={()=>setModalContado(false)} style={{padding:"9px 18px",borderRadius:8,border:`1px solid ${t.border}`,background:"none",color:t.sub,cursor:"pointer",fontWeight:600}}>Cancelar</button>
-          <button onClick={saveContado} disabled={loading} style={{padding:"9px 18px",borderRadius:8,border:"none",background:"#10b981",color:"#fff",cursor:"pointer",fontWeight:700,opacity:loading?0.7:1}}>{loading?"Guardando...":"Registrar venta"}</button>
+          <button onClick={saveContado} disabled={loading} style={{padding:"9px 18px",borderRadius:8,border:"none",background:"#10b981",color:"#fff",cursor:"pointer",fontWeight:700,opacity:loading?0.7:1}}>{loading?"Guardando...":"Registrar"}</button>
         </div>
       </Modal>
     </div>
   );
 };
+
+
 const Cartera=({creditos,productos,clients,t})=>{
   const creditosActivos=creditos.filter(c=>c.estado!=="Finalizado");
   const plata=creditosActivos.reduce((s,c)=>s+(c.monto-c.monto*(c.cuotasPagadas/c.cuotas)),0);

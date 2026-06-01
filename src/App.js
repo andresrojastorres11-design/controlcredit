@@ -1,7 +1,8 @@
 // Este archivo reemplaza el contenido de src/App.js
 // Supabase ya está integrado - los datos se guardan en la nube
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import React from "react";
 import { createClient } from "@supabase/supabase-js";
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 
@@ -17,12 +18,12 @@ const EVOL=[{mes:"Ene",cobros:0,mora:0,prestamos:0},{mes:"Feb",cobros:0,mora:0,p
 const FRECUENCIAS=["Semanal","Quincenal","Mensual"];
 const fmt=(n)=>new Intl.NumberFormat("es-AR",{style:"currency",currency:"ARS",maximumFractionDigits:0}).format(n||0);
 const fmtFecha=(iso)=>{if(!iso)return"—";const[y,m,d]=iso.split("-");return`${d}/${m}/${y}`;};
-const generarFechasCuotas=(fechaOtorg,frecuencia,cantCuotas)=>{if(!fechaOtorg||!cantCuotas)return[];const dias=frecuencia==="Semanal"?7:frecuencia==="Quincenal"?15:30;return Array.from({length:cantCuotas},(_,i)=>{const d=new Date(fechaOtorg);d.setDate(d.getDate()+dias*(i+1));return d.toISOString().slice(0,10);});};
+const generarFechasCuotas=(fechaOtorg,frecuencia,cantCuotas)=>{if(!fechaOtorg||!cantCuotas)return[];const dias=frecuencia==="Semanal"?7:frecuencia==="Quincenal"?14:30;return Array.from({length:cantCuotas},(_,i)=>{const d=new Date(fechaOtorg);d.setDate(d.getDate()+dias*(i+1));return d.toISOString().slice(0,10);});};
 const crearDetalleCuotas=(fechaOtorg,frecuencia,cantCuotas,valorCuota)=>{const fechas=generarFechasCuotas(fechaOtorg,frecuencia,cantCuotas);return fechas.map((fecha,i)=>({num:i+1,fechaVenc:fecha,montoPagado:0,estado:"Pendiente",fechaPago:null}));};
 
 // Helpers para convertir entre snake_case (Supabase) y camelCase (App)
-const clientFromDB=(r)=>({id:r.id,nombre:r.nombre,apellido:r.apellido,dni:r.dni||"",email:r.email||"",tel:r.tel||"",ciudad:r.ciudad||"",provincia:r.provincia||"",estado:r.estado||"Al día",score:r.score||75,sueldo:r.sueldo||"",ocupacion:r.ocupacion||"",empresa:r.empresa||"",estadoCivil:r.estado_civil||"",nacimiento:r.nacimiento||"",notas:r.notas||"",usuarioId:r.usuario_id||0});
-const creditoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,monto:r.monto,totalCobrar:r.total_cobrar,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,valorCuota:r.valor_cuota,saldoCobrado:r.saldo_cobrado||0,saldoPendiente:r.saldo_pendiente,frecuencia:r.frecuencia,fechaOtorg:r.fecha_otorg,proximoPago:r.proximo_pago,estado:r.estado,comentarios:r.comentarios||"",historial:r.historial||[],detalleCuotas:r.detalle_cuotas||[],usuarioId:r.usuario_id||0});
+const clientFromDB=(r)=>({id:r.id,nombre:r.nombre,apellido:r.apellido,dni:r.dni||"",email:r.email||"",tel:r.tel||"",ciudad:r.ciudad||"",provincia:r.provincia||"",estado:r.estado||"Al día",score:r.score||75,sueldo:r.sueldo||"",ocupacion:r.ocupacion||"",empresa:r.empresa||"",estadoCivil:r.estado_civil||"",nacimiento:r.nacimiento||"",notas:r.notas||"",usuarioId:r.usuario_id||0,dniFrenteUrl:r.dni_frente||"",dniDorsoUrl:r.dni_dorso||""});
+const creditoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,monto:r.monto,totalCobrar:r.total_cobrar,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,valorCuota:r.valor_cuota,saldoCobrado:r.saldo_cobrado||0,saldoPendiente:r.saldo_pendiente,frecuencia:r.frecuencia,fechaOtorg:r.fecha_otorg,proximoPago:r.proximo_pago,estado:r.estado,comentarios:r.comentarios||"",historial:r.historial||[],detalleCuotas:r.detalle_cuotas||[],usuarioId:r.usuario_id||0,pagareUrl:r.pagare_url||""});
 const productoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,producto:r.producto,inversion:r.inversion,precioFinanciado:r.precio_financiado,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,saldoCobrado:r.saldo_cobrado||0,valorCuota:r.valor_cuota,estado:r.estado,frecuencia:r.frecuencia,usuarioId:r.usuario_id||0});
 
 // ── PDF ENGINE ────────────────────────────────────────────────────────────────
@@ -235,7 +236,51 @@ const generatePDFCliente=(cliente,creditos,productos)=>{
   abrirPDF(html,`Cliente_${cliente.nombre}_${cliente.apellido}`);
 };
 
-// ── EXPORTAR EXCEL (CSV) ──────────────────────────────────────────────────────
+// ── SUBIR ARCHIVOS A SUPABASE STORAGE ────────────────────────────────────────
+const subirArchivo=async(file,carpeta)=>{
+  const ext=file.name.split('.').pop();
+  const nombre=`${carpeta}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+  const {data,error}=await sb.storage.from('documentos').upload(nombre,file,{cacheControl:'3600',upsert:false});
+  if(error)throw error;
+  const {data:urlData}=sb.storage.from('documentos').getPublicUrl(nombre);
+  // Si el bucket es privado usamos signed URL
+  const {data:signed}=await sb.storage.from('documentos').createSignedUrl(nombre,60*60*24*365);
+  return signed?.signedUrl||urlData?.publicUrl||nombre;
+};
+
+// Componente de subida de foto/documento
+const UploadBtn=({label,url,onUpload,accept,t,color="#3b82f6"})=>{
+  const [loading,setLoading]=useState(false);
+  const ref=React.useRef();
+  const handleFile=async(e)=>{
+    const file=e.target.files[0];
+    if(!file)return;
+    setLoading(true);
+    try{
+      const fileUrl=await subirArchivo(file,'documentos');
+      onUpload(fileUrl);
+    }catch(err){
+      alert('Error al subir archivo: '+err.message);
+    }
+    setLoading(false);
+    e.target.value='';
+  };
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+      <button onClick={()=>ref.current.click()} disabled={loading}
+        style={{display:"flex",alignItems:"center",gap:6,background:`${color}15`,border:`1px solid ${color}40`,borderRadius:8,padding:"7px 12px",cursor:"pointer",color,fontSize:12,fontWeight:600,whiteSpace:"nowrap"}}>
+        {loading?'⏳ Subiendo...':`📎 ${label}`}
+      </button>
+      <input ref={ref} type="file" accept={accept||"image/*,.pdf"} onChange={handleFile} style={{display:"none"}}/>
+      {url&&(
+        <a href={url} target="_blank" rel="noopener noreferrer"
+          style={{fontSize:11,color,textDecoration:"none",display:"flex",alignItems:"center",gap:4,background:`${color}10`,padding:"4px 8px",borderRadius:6,border:`1px solid ${color}20`}}>
+          👁 Ver documento
+        </a>
+      )}
+    </div>
+  );
+};
 const exportarExcelCreditos=(creditos,clients)=>{
   const activos=creditos.filter(c=>c.estado!=="Finalizado");
   let csv="CLIENTE,DNI,TELÉFONO,ESTADO,CAPITAL,TOTAL A COBRAR,YA COBRADO,SALDO PENDIENTE,CUOTAS,CUOTAS PAGADAS,CUOTAS RESTANTES,VALOR CUOTA,FRECUENCIA,PRÓX. VENCIMIENTO,OBSERVACIONES\n";
@@ -280,6 +325,48 @@ const exportarExcelProductos=(productos,ventasContado=[])=>{
   a.href=url;a.download=`ControlCredit_Productos_${new Date().toLocaleDateString("es-AR").replace(/\//g,"-")}.csv`;
   document.body.appendChild(a);a.click();document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url),2000);
+};
+
+// ── BUSCADOR DE CLIENTE ───────────────────────────────────────────────────────
+const ClienteBuscador=({clients,onSelect,t})=>{
+  const [busq,setBusq]=useState("");
+  const [seleccionado,setSeleccionado]=useState(null);
+  const filtrados=busq.length>=2?clients.filter(c=>{
+    const q=busq.toLowerCase();
+    return c.nombre.toLowerCase().includes(q)||c.apellido.toLowerCase().includes(q)||(c.dni||"").includes(q);
+  }).slice(0,8):[];
+  const elegir=(c)=>{setSeleccionado(c);setBusq(`${c.nombre} ${c.apellido}`);onSelect(c);};
+  return(
+    <div style={{marginBottom:14,position:"relative"}}>
+      <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Buscar cliente *</label>
+      <div style={{position:"relative"}}>
+        <input value={busq} onChange={e=>{setBusq(e.target.value);setSeleccionado(null);onSelect(null);}}
+          placeholder="Escribí nombre o DNI..."
+          style={{width:"100%",padding:"9px 14px 9px 38px",borderRadius:8,border:`1px solid ${seleccionado?t.accent2:t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+        <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:t.sub}}>🔍</span>
+        {seleccionado&&<span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",color:t.accent2,fontSize:16}}>✓</span>}
+      </div>
+      {filtrados.length>0&&!seleccionado&&(
+        <div style={{position:"absolute",top:"100%",left:0,right:0,background:t.card,border:`1px solid ${t.border}`,borderRadius:8,boxShadow:"0 8px 24px rgba(0,0,0,0.2)",zIndex:100,maxHeight:220,overflowY:"auto"}}>
+          {filtrados.map(c=>(
+            <div key={c.id} onClick={()=>elegir(c)}
+              style={{padding:"10px 14px",cursor:"pointer",borderBottom:`1px solid ${t.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}
+              onMouseEnter={e=>e.currentTarget.style.background=t.bg}
+              onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              <div>
+                <div style={{fontWeight:600,color:t.text,fontSize:13}}>{c.nombre} {c.apellido}</div>
+                <div style={{fontSize:11,color:t.sub}}>DNI: {c.dni||"—"} · {c.tel||"sin tel"}</div>
+              </div>
+              <span style={{fontSize:10,background:c.estado==="Al día"?"#d1fae5":c.estado==="Moroso"?"#fee2e2":"#fef3c7",color:c.estado==="Al día"?"#065f46":c.estado==="Moroso"?"#991b1b":"#92400e",padding:"2px 7px",borderRadius:20,fontWeight:600}}>{c.estado}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {busq.length>=2&&filtrados.length===0&&!seleccionado&&(
+        <div style={{background:t.bg,borderRadius:8,padding:"10px 14px",marginTop:4,fontSize:12,color:t.sub}}>No se encontraron clientes</div>
+      )}
+    </div>
+  );
 };
 
 const Icon=({name,size=18})=>{
@@ -594,6 +681,30 @@ const PerfilCliente=({client,creditos,productos,setCreditos,onClose,onEdit,t})=>
             {client.notas&&<div style={{marginTop:10}}><div style={{fontSize:10,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Notas</div><div style={{fontSize:11,color:t.text,background:t.bg,borderRadius:7,padding:"8px 10px"}}>{client.notas}</div></div>}
           </div>
         </div>
+        {/* DOCUMENTOS DNI */}
+        <div style={{background:t.card,borderRadius:12,border:`1px solid ${t.border}`,padding:"16px 18px",marginBottom:14}}>
+          <h3 style={{margin:"0 0 12px",fontSize:13,fontWeight:700,color:t.text}}>🪪 Documentos del cliente</h3>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <div>
+              <div style={{fontSize:11,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:8}}>DNI — Frente</div>
+              {client.dniFrenteUrl&&<img src={client.dniFrenteUrl} alt="DNI frente" style={{width:"100%",borderRadius:8,marginBottom:6,border:`1px solid ${t.border}`,maxHeight:120,objectFit:"cover"}} onError={e=>e.target.style.display='none'}/>}
+              <UploadBtn label="Subir DNI frente" url={client.dniFrenteUrl} accept="image/*" color="#3b82f6" t={t}
+                onUpload={async(url)=>{
+                  await sb.from("clientes").update({dni_frente:url}).eq("id",client.id);
+                  client.dniFrenteUrl=url;
+                }}/>
+            </div>
+            <div>
+              <div style={{fontSize:11,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:8}}>DNI — Dorso</div>
+              {client.dniDorsoUrl&&<img src={client.dniDorsoUrl} alt="DNI dorso" style={{width:"100%",borderRadius:8,marginBottom:6,border:`1px solid ${t.border}`,maxHeight:120,objectFit:"cover"}} onError={e=>e.target.style.display='none'}/>}
+              <UploadBtn label="Subir DNI dorso" url={client.dniDorsoUrl} accept="image/*" color="#8b5cf6" t={t}
+                onUpload={async(url)=>{
+                  await sb.from("clientes").update({dni_dorso:url}).eq("id",client.id);
+                  client.dniDorsoUrl=url;
+                }}/>
+            </div>
+          </div>
+        </div>
         <div style={{background:t.card,borderRadius:12,border:`1px solid ${t.border}`,padding:"18px 20px",marginBottom:12}}>
           <h3 style={{margin:"0 0 14px",fontSize:14,fontWeight:700,color:t.text}}>💳 Créditos ({credC.length})</h3>
           {credC.length===0?<div style={{textAlign:"center",padding:"20px",color:t.sub,fontSize:13}}>Sin créditos registrados</div>:(
@@ -805,10 +916,20 @@ const Dashboard=({clients,creditos,productos,ventasContado=[],t})=>{
   const [metaGuardada,setMetaGuardada]=useState({ganancia:0,clientes:0});
 
   const activos=creditos.filter(c=>c.estado!=="Finalizado");
-  const plata=activos.reduce((s,c)=>s+(c.monto-c.monto*(c.cuotasPagadas/c.cuotas)),0);
-  const porCobrar=activos.reduce((s,c)=>s+c.saldoPendiente,0);
-  const ganEsp=creditos.reduce((s,c)=>s+c.ganancia,0);
-  const ganReal=creditos.reduce((s,c)=>s+(c.ganancia/c.cuotas)*c.cuotasPagadas,0)+(ventasContado||[]).reduce((s,v)=>s+v.ganancia,0);
+  const productosActivos=productos.filter(p=>p.estado!=="Finalizado");
+  // Capital en la calle = créditos + inversión en productos activos
+  const plata=activos.reduce((s,c)=>s+(c.monto-c.monto*(c.cuotasPagadas/c.cuotas)),0)
+    +productosActivos.reduce((s,p)=>s+(p.inversion-(p.inversion*(p.cuotasPagadas/p.cuotas))),0);
+  // Por cobrar = saldo pendiente créditos + saldo pendiente productos
+  const porCobrar=activos.reduce((s,c)=>s+c.saldoPendiente,0)
+    +productosActivos.reduce((s,p)=>s+Math.max(0,p.precioFinanciado-p.saldoCobrado),0);
+  // Ganancia esperada = créditos + ventas financiadas
+  const ganEsp=creditos.reduce((s,c)=>s+c.ganancia,0)
+    +productos.reduce((s,p)=>s+p.ganancia,0);
+  // Ganancia realizada = créditos cobrados + productos cobrados + ventas contado
+  const ganReal=creditos.reduce((s,c)=>s+(c.ganancia/c.cuotas)*c.cuotasPagadas,0)
+    +productos.reduce((s,p)=>s+(p.ganancia/p.cuotas)*p.cuotasPagadas,0)
+    +(ventasContado||[]).reduce((s,v)=>s+v.ganancia,0);
   const nMorosos=clients.filter(c=>c.estado==="Moroso").length;
   const nAlDia=clients.filter(c=>c.estado==="Al día"||c.estado==="Premium").length;
   const alertas=creditos.filter(c=>c.estado==="Moroso"||c.estado==="Atrasado");
@@ -816,8 +937,11 @@ const Dashboard=({clients,creditos,productos,ventasContado=[],t})=>{
   const pie=[{name:"Al día",value:nAlDia},{name:"Morosos",value:nMorosos},{name:"Atrasados",value:clients.filter(c=>c.estado==="Atrasado").length}].filter(d=>d.value>0);
 
   // Flujo de efectivo
-  const totalCobradoReal=creditos.reduce((s,c)=>s+c.saldoCobrado,0);
-  const totalPendienteReal=creditos.reduce((s,c)=>s+c.saldoPendiente,0);
+  const totalCobradoReal=creditos.reduce((s,c)=>s+c.saldoCobrado,0)
+    +productos.reduce((s,p)=>s+p.saldoCobrado,0)
+    +(ventasContado||[]).reduce((s,v)=>s+v.precio_venta,0);
+  const totalPendienteReal=creditos.reduce((s,c)=>s+c.saldoPendiente,0)
+    +productosActivos.reduce((s,p)=>s+Math.max(0,p.precioFinanciado-p.saldoCobrado),0);
   const flujoTotal=totalCobradoReal+totalPendienteReal;
   const capitalRecuperado=creditos.reduce((s,c)=>s+c.monto*(c.cuotasPagadas/c.cuotas),0);
   const interesesCobrados=Math.max(0,totalCobradoReal-capitalRecuperado);
@@ -927,7 +1051,7 @@ const Dashboard=({clients,creditos,productos,ventasContado=[],t})=>{
         <MetricCard label="Total clientes" value={clients.length} icon="users" color="#f59e0b" t={t}/>
         <MetricCard label="Morosos" value={nMorosos} icon="alert" color="#ef4444" t={t}/>
         <MetricCard label="Créditos activos" value={activos.length} icon="creditos" color="#3b82f6" t={t}/>
-        <MetricCard label="Prod. activos" value={productos.filter(p=>p.estado==="Activo").length} icon="productos" color="#10b981" t={t}/>
+        <MetricCard label="Prod. activos" value={productosActivos.length} icon="productos" color="#10b981" t={t}/>
       </div>
 
       {/* ── METAS ── */}
@@ -1450,6 +1574,11 @@ const Creditos=({creditos,setCreditos,clients,usuarioActual,t})=>{
                       <button onClick={()=>setExpandido(exp?null:c.id)} style={{background:exp?t.accent:"none",border:`1px solid ${t.accent}`,color:exp?"#fff":t.accent,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><Icon name="calendar" size={13}/>{exp?"Ocultar":"Ver cuotas"}</button>
                       <button onClick={()=>abrirEdicion(c)} style={{background:"none",border:`1px solid ${t.border}`,color:t.sub,borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:3}} title="Editar crédito"><Icon name="edit" size={13}/></button>
                       <button onClick={()=>generatePDF(c)} style={{background:"none",border:`1px solid ${t.border}`,color:t.sub,borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}><Icon name="pdf" size={13}/></button>
+                      <UploadBtn label={c.pagareUrl?"📄 Pagaré ✓":"📄 Pagaré"} url={c.pagareUrl} accept="image/*,.pdf" color={c.pagareUrl?"#10b981":"#f59e0b"} t={t}
+                        onUpload={async(url)=>{
+                          await sb.from("creditos").update({pagare_url:url}).eq("id",c.id);
+                          setCreditos(cs=>cs.map(x=>x.id===c.id?{...x,pagareUrl:url}:x));
+                        }}/>
                       <button onClick={()=>eliminar(c.id)} style={{background:"none",border:"1px solid #fca5a5",color:"#ef4444",borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center"}}><Icon name="trash" size={13}/></button>
                     </div>
                   </div>
@@ -1482,7 +1611,7 @@ const Creditos=({creditos,setCreditos,clients,usuarioActual,t})=>{
       )}
       <Modal open={modal} onClose={()=>setModal(false)} title="Nuevo crédito" t={t}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
-          <div style={{gridColumn:"1/-1"}}><Field label="Cliente *" value={form.clienteId} onChange={v=>setForm(f=>({...f,clienteId:v}))} options={clienteOpts} t={t}/></div>
+          <div style={{gridColumn:"1/-1"}}><ClienteBuscador clients={clients} t={t} onSelect={c=>setForm(f=>({...f,clienteId:c?c.id:""}))}/></div>
           <Field label="Monto prestado ($) *" value={form.monto} onChange={v=>setForm(f=>({...f,monto:v}))} type="number" t={t}/>
           <Field label="Total a cobrar ($) *" value={form.totalCobrar} onChange={v=>setForm(f=>({...f,totalCobrar:v}))} type="number" t={t}/>
           <Field label="Cantidad de cuotas *" value={form.cuotas} onChange={v=>setForm(f=>({...f,cuotas:v}))} type="number" t={t}/>
@@ -1682,7 +1811,7 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
       {/* MODAL NUEVA VENTA FINANCIADA */}
       <Modal open={modal} onClose={()=>setModal(false)} title="Nueva venta financiada" t={t}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
-          <div style={{gridColumn:"1/-1"}}><Field label="Cliente *" value={form.clienteId} onChange={v=>setForm(f=>({...f,clienteId:v}))} options={clienteOpts} t={t}/></div>
+          <div style={{gridColumn:"1/-1"}}><ClienteBuscador clients={clients} t={t} onSelect={c=>setForm(f=>({...f,clienteId:c?c.id:""}))}/></div>
           <div style={{gridColumn:"1/-1"}}><Field label="Producto *" value={form.producto} onChange={v=>setForm(f=>({...f,producto:v}))} t={t}/></div>
           <Field label="Inversión propia ($) *" value={form.inversion} onChange={v=>setForm(f=>({...f,inversion:v}))} type="number" t={t}/>
           <Field label="Precio financiado ($)" value={form.precioFinanciado} onChange={v=>setForm(f=>({...f,precioFinanciado:v}))} type="number" t={t}/>

@@ -1409,10 +1409,51 @@ const Clientes=({clients,setClients,creditos,setCreditos,productos,usuarioActual
   const [perfil,setPerfil]=useState(null);
   const [sel,setSel]=useState(null);
   const [loading,setLoading]=useState(false);
+  const [scanLoading,setScanLoading]=useState(false);
+  const dniRef=useRef();
   const EF={nombre:"",apellido:"",dni:"",email:"",tel:"",ciudad:"",provincia:"",estado:"Al día",sueldo:"",ocupacion:"",empresa:"",estadoCivil:"Soltero/a",nacimiento:"",score:75,notas:""};
   const [form,setForm]=useState(EF);
   const filtered=clients.filter(c=>{const q=search.toLowerCase();return(c.nombre.toLowerCase().includes(q)||c.apellido.toLowerCase().includes(q)||(c.dni||"").includes(q))&&(filtro==="Todos"||c.estado===filtro);});
   const openEdit=(c,e)=>{if(e)e.stopPropagation();setSel(c);setForm({...EF,...c});setModal(true);};
+
+  // Escanear DNI con Claude Vision
+  const escanearDNI=async(file)=>{
+    setScanLoading(true);
+    try{
+      const toBase64=f=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=rej;r.readAsDataURL(f);});
+      const b64=await toBase64(file);
+      const resp=await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          model:"claude-sonnet-4-20250514",
+          max_tokens:500,
+          messages:[{role:"user",content:[
+            {type:"image",source:{type:"base64",media_type:file.type||"image/jpeg",data:b64}},
+            {type:"text",text:`Analizá esta imagen de un DNI argentino y extraé los datos. Respondé SOLO con un JSON sin texto extra ni backticks con estos campos exactos:
+{"nombre":"","apellido":"","dni":"","nacimiento":"YYYY-MM-DD","sexo":""}
+Si no encontrás algún dato dejalo vacío. El DNI son solo los números sin puntos.`}
+          ]}]
+        })
+      });
+      const data=await resp.json();
+      const txt=data.content?.[0]?.text||"{}";
+      const clean=txt.replace(/```json|```/g,"").trim();
+      const parsed=JSON.parse(clean);
+      setForm(f=>({
+        ...f,
+        nombre:parsed.nombre||f.nombre,
+        apellido:parsed.apellido||f.apellido,
+        dni:parsed.dni||f.dni,
+        nacimiento:parsed.nacimiento||f.nacimiento,
+        estadoCivil:parsed.sexo==="F"?"Soltero/a":parsed.sexo==="M"?"Soltero/a":f.estadoCivil,
+      }));
+      alert("✅ Datos del DNI cargados. Revisalos antes de guardar.");
+    }catch(err){
+      alert("No se pudo leer el DNI automáticamente. Cargá los datos manualmente.");
+    }
+    setScanLoading(false);
+  };
 
   const save=async()=>{
     if(!form.nombre||!form.dni)return;
@@ -1481,6 +1522,26 @@ const Clientes=({clients,setClients,creditos,setCreditos,productos,usuarioActual
         </div>
       )}
       <Modal open={modal} onClose={()=>setModal(false)} title={sel?"Editar cliente":"Nuevo cliente"} t={t} wide>
+        {/* BOTÓN ESCANEAR DNI */}
+        {!sel&&(
+          <div style={{background:`${t.accent}10`,border:`1px dashed ${t.accent}40`,borderRadius:10,padding:"14px 16px",marginBottom:18,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:t.accent,marginBottom:2}}>📷 Escanear DNI automáticamente</div>
+              <div style={{fontSize:11,color:t.sub}}>Sacá una foto del DNI frente y se completan los datos solos</div>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <input ref={dniRef} type="file" accept="image/*" capture="environment" onChange={e=>e.target.files[0]&&escanearDNI(e.target.files[0])} style={{display:"none"}}/>
+              <button onClick={()=>dniRef.current.click()} disabled={scanLoading}
+                style={{background:t.accent,color:"#fff",border:"none",borderRadius:8,padding:"9px 16px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
+                {scanLoading?"⏳ Leyendo DNI...":"📷 Foto DNI"}
+              </button>
+              <button onClick={()=>{const inp=document.createElement("input");inp.type="file";inp.accept="image/*";inp.onchange=e=>e.target.files[0]&&escanearDNI(e.target.files[0]);inp.click();}} disabled={scanLoading}
+                style={{background:"none",border:`1px solid ${t.accent}`,color:t.accent,borderRadius:8,padding:"9px 14px",fontWeight:600,fontSize:12,cursor:"pointer"}}>
+                🖼 Galería
+              </button>
+            </div>
+          </div>
+        )}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
           <Field label="Nombre *" value={form.nombre} onChange={v=>setForm(f=>({...f,nombre:v}))} t={t}/>
           <Field label="Apellido *" value={form.apellido} onChange={v=>setForm(f=>({...f,apellido:v}))} t={t}/>

@@ -388,6 +388,83 @@ const exportarExcelProductos=(productos,ventasContado=[])=>{
   setTimeout(()=>URL.revokeObjectURL(url),2000);
 };
 
+// ── BACKUP COMPLETO POR EMAIL ─────────────────────────────────────────────────
+const backupPorEmail=(creditos,clientes,productos,ventasContado,emailDestino)=>{
+  const fecha=new Date().toLocaleDateString("es-AR");
+  const activos=creditos.filter(c=>c.estado!=="Finalizado");
+  const morosos=creditos.filter(c=>c.estado==="Moroso"||c.estado==="Atrasado");
+  const prodActivos=productos.filter(p=>p.estado!=="Finalizado");
+
+  // Generar CSV completo
+  let csv="";
+
+  // Hoja 1: Clientes activos
+  csv+="=== CLIENTES ACTIVOS ===\n";
+  csv+="NOMBRE,APELLIDO,DNI,TELÉFONO,EMAIL,CIUDAD,ESTADO,SCORE\n";
+  clientes.filter(c=>c.estado!=="Restringido").forEach(c=>{
+    csv+=`"${c.nombre}","${c.apellido}","${c.dni||""}","${c.tel||""}","${c.email||""}","${c.ciudad||""}","${c.estado}","${c.score||75}"\n`;
+  });
+
+  csv+="\n=== CRÉDITOS ACTIVOS Y MOROSOS ===\n";
+  csv+="CLIENTE,ESTADO,CAPITAL,TOTAL COBRAR,YA COBRADO,SALDO PENDIENTE,CUOTAS,CUOTAS PAGADAS,VALOR CUOTA,FRECUENCIA,PRÓX VENCIMIENTO\n";
+  activos.forEach(c=>{
+    csv+=`"${c.clienteNombre}","${c.estado}","${c.monto}","${c.totalCobrar}","${c.saldoCobrado}","${c.saldoPendiente}","${c.cuotas}","${c.cuotasPagadas}","${c.valorCuota}","${c.frecuencia}","${fmtFecha(c.proximoPago)}"\n`;
+  });
+
+  csv+="\n=== VENTAS FINANCIADAS ACTIVAS ===\n";
+  csv+="CLIENTE,PRODUCTO,INVERSIÓN,FINANCIADO,GANANCIA,CUOTAS,CUOTAS PAGADAS,SALDO PENDIENTE,FRECUENCIA,ESTADO\n";
+  prodActivos.forEach(p=>{
+    const vc=p.valorCuota||Math.round(p.precioFinanciado/p.cuotas);
+    const saldo=(p.cuotas-p.cuotasPagadas)*vc;
+    csv+=`"${p.clienteNombre}","${p.producto}","${p.inversion}","${p.precioFinanciado}","${p.ganancia}","${p.cuotas}","${p.cuotasPagadas}","${saldo}","${p.frecuencia}","${p.estado}"\n`;
+  });
+
+  if(ventasContado.length>0){
+    csv+="\n=== VENTAS DE CONTADO ===\n";
+    csv+="PRODUCTO,CLIENTE,COSTO,PRECIO VENTA,GANANCIA,FECHA\n";
+    ventasContado.forEach(v=>{
+      csv+=`"${v.producto}","${v.cliente_nombre||"—"}","${v.costo}","${v.precio_venta}","${v.ganancia}","${fmtFecha(v.fecha)}"\n`;
+    });
+  }
+
+  // Descargar el archivo
+  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  const nombreArchivo=`ControlCredit_Backup_${fecha.replace(/\//g,"-")}.csv`;
+  a.href=url;a.download=nombreArchivo;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+
+  // Resumen para el email
+  const totalEnLaCalle=activos.reduce((s,c)=>s+c.saldoPendiente,0);
+  const gananciaReal=creditos.reduce((s,c)=>s+(c.ganancia/c.cuotas)*c.cuotasPagadas,0);
+
+  const asunto=encodeURIComponent(`ControlCredit — Backup ${fecha}`);
+  const cuerpo=encodeURIComponent(
+`Backup de ControlCredit — ${fecha}
+
+RESUMEN DEL NEGOCIO:
+• Clientes activos: ${clientes.length}
+• Morosos: ${morosos.length}
+• Créditos activos: ${activos.length}
+• Saldo total pendiente: ${fmt(totalEnLaCalle)}
+• Ganancia realizada: ${fmt(gananciaReal)}
+• Ventas financiadas activas: ${prodActivos.length}
+• Ventas de contado: ${ventasContado.length}
+
+El archivo CSV adjunto contiene el detalle completo.
+(Adjuntá el archivo ${nombreArchivo} que se descargó automáticamente)
+
+— ControlCredit`
+  );
+
+  // Abrir Gmail con el resumen
+  setTimeout(()=>{
+    window.open(`https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(emailDestino)}&su=${asunto}&body=${cuerpo}`,"_blank");
+  },1000);
+};
+
 // ── BUSCADOR DE CLIENTE ───────────────────────────────────────────────────────
 const ClienteBuscador=({clients,onSelect,t})=>{
   const [busq,setBusq]=useState("");
@@ -966,7 +1043,7 @@ const AdminUsuarios=({t,allClients,allCreditos,allProductos,allVentasContado})=>
     </div>
   );
 };
-const Dashboard=({clients,creditos,productos,ventasContado=[],t})=>{
+const Dashboard=({clients,creditos,setCreditos,productos,ventasContado=[],t})=>{
   const hoy=new Date();hoy.setHours(0,0,0,0);
   const [mesPDF,setMesPDF]=useState(hoy.getMonth()+1);
   const [anioPDF,setAnioPDF]=useState(hoy.getFullYear());
@@ -975,6 +1052,8 @@ const Dashboard=({clients,creditos,productos,ventasContado=[],t})=>{
   const [editandoMeta,setEditandoMeta]=useState(false);
   const [meta,setMeta]=useState({ganancia:"",clientes:""});
   const [metaGuardada,setMetaGuardada]=useState({ganancia:0,clientes:0});
+  const [emailBackup,setEmailBackup]=useState("");
+  const [showEmailInput,setShowEmailInput]=useState(false);
 
   const activos=creditos.filter(c=>c.estado!=="Finalizado");
   const productosActivos=productos.filter(p=>p.estado!=="Finalizado");
@@ -1087,17 +1166,39 @@ const Dashboard=({clients,creditos,productos,ventasContado=[],t})=>{
     <div>
       <div style={{marginBottom:22,display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
         <div><h1 style={{fontSize:24,fontWeight:800,color:t.text,margin:"0 0 4px"}}>Dashboard</h1><p style={{color:t.sub,margin:0,fontSize:14}}>{new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"})}</p></div>
-        <div style={{display:"flex",gap:8,alignItems:"center",background:t.card,padding:"10px 14px",borderRadius:12,border:`1px solid ${t.border}`}}>
-          <span style={{fontSize:12,color:t.sub,fontWeight:600}}>Reporte:</span>
-          <select value={mesPDF} onChange={e=>setMesPDF(+e.target.value)} style={{padding:"5px 8px",borderRadius:6,border:`1px solid ${t.border}`,background:t.input,color:t.text,fontSize:12,outline:"none"}}>
-            {["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"].map((m,i)=><option key={i} value={i+1}>{m}</option>)}
-          </select>
-          <select value={anioPDF} onChange={e=>setAnioPDF(+e.target.value)} style={{padding:"5px 8px",borderRadius:6,border:`1px solid ${t.border}`,background:t.input,color:t.text,fontSize:12,outline:"none"}}>
-            {[2024,2025,2026,2027].map(a=><option key={a} value={a}>{a}</option>)}
-          </select>
-          <button onClick={()=>generateReporteMensual(creditos,clients,productos,mesPDF,anioPDF,ventasContado)} style={{background:"#ef4444",color:"#fff",border:"none",borderRadius:8,padding:"7px 14px",fontWeight:700,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
-            <Icon name="pdf" size={14}/>Generar PDF
-          </button>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          {/* BACKUP EMAIL */}
+          <div style={{display:"flex",gap:6,alignItems:"center",background:t.card,padding:"8px 12px",borderRadius:10,border:`1px solid ${t.border}`}}>
+            {showEmailInput?(
+              <>
+                <input value={emailBackup} onChange={e=>setEmailBackup(e.target.value)} placeholder="tucorreo@gmail.com" type="email"
+                  style={{padding:"5px 10px",borderRadius:6,border:`1px solid ${t.border}`,background:t.input,color:t.text,fontSize:12,outline:"none",width:200}}/>
+                <button onClick={()=>{if(!emailBackup){alert("Ingresá tu email");return;}backupPorEmail(creditos,clients,productos,ventasContado,emailBackup);setShowEmailInput(false);}}
+                  style={{background:"#3b82f6",color:"#fff",border:"none",borderRadius:6,padding:"5px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                  💾 Enviar
+                </button>
+                <button onClick={()=>setShowEmailInput(false)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"5px 8px",fontSize:11,cursor:"pointer",color:t.sub}}>✕</button>
+              </>
+            ):(
+              <button onClick={()=>setShowEmailInput(true)}
+                style={{background:"none",border:"none",cursor:"pointer",color:"#3b82f6",fontSize:12,fontWeight:700,display:"flex",alignItems:"center",gap:5}}>
+                💾 Backup por email
+              </button>
+            )}
+          </div>
+          {/* REPORTE PDF */}
+          <div style={{display:"flex",gap:8,alignItems:"center",background:t.card,padding:"10px 14px",borderRadius:12,border:`1px solid ${t.border}`}}>
+            <span style={{fontSize:12,color:t.sub,fontWeight:600}}>Reporte:</span>
+            <select value={mesPDF} onChange={e=>setMesPDF(+e.target.value)} style={{padding:"5px 8px",borderRadius:6,border:`1px solid ${t.border}`,background:t.input,color:t.text,fontSize:12,outline:"none"}}>
+              {["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"].map((m,i)=><option key={i} value={i+1}>{m}</option>)}
+            </select>
+            <select value={anioPDF} onChange={e=>setAnioPDF(+e.target.value)} style={{padding:"5px 8px",borderRadius:6,border:`1px solid ${t.border}`,background:t.input,color:t.text,fontSize:12,outline:"none"}}>
+              {[2024,2025,2026,2027].map(a=><option key={a} value={a}>{a}</option>)}
+            </select>
+            <button onClick={()=>generateReporteMensual(creditos,clients,productos,mesPDF,anioPDF,ventasContado)} style={{background:"#ef4444",color:"#fff",border:"none",borderRadius:8,padding:"7px 14px",fontWeight:700,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
+              <Icon name="pdf" size={14}/>Generar PDF
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1313,10 +1414,30 @@ const Dashboard=({clients,creditos,productos,ventasContado=[],t})=>{
                           </div>
                         </div>
                         <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                          {/* BOTÓN COBRADO — paga la próxima cuota con 1 clic */}
+                          <button onClick={async e=>{
+                            e.stopPropagation();
+                            if(!confirm(`¿Marcar cuota de ${fmt(c.proxCuota?.valorCuotaEditado||c.valorCuota)} como pagada?`))return;
+                            const det=[...(c.detalleCuotas||[])];
+                            const idx=det.findIndex(d=>d.estado==="Pendiente"||d.estado==="Parcial");
+                            if(idx===-1)return;
+                            const vc=det[idx].valorCuotaEditado||c.valorCuota;
+                            det[idx]={...det[idx],montoPagado:vc,estado:"Pagada",fechaPago:new Date().toLocaleDateString("es-AR")};
+                            const totalCobrado=det.reduce((s,d)=>s+d.montoPagado,0);
+                            const nuevoTotal=det.reduce((s,d)=>s+(d.valorCuotaEditado||c.valorCuota),0);
+                            const pendiente=Math.max(0,nuevoTotal-totalCobrado);
+                            const pagadas=det.filter(d=>d.estado==="Pagada").length;
+                            const prox=det.find(d=>d.estado!=="Pagada");
+                            const nuevoEstado=pendiente<=0?"Finalizado":"Al día";
+                            await sb.from("creditos").update({cuotas_pagadas:pagadas,saldo_cobrado:totalCobrado,saldo_pendiente:pendiente,proximo_pago:prox?.fechaVenc||"",estado:nuevoEstado,detalle_cuotas:det,historial:[...c.historial,{tipo:"pago_completo",cuota:idx+1,monto:vc,fecha:new Date().toLocaleDateString("es-AR")}]}).eq("id",c.id);
+                            setCreditos(cs=>cs.map(x=>x.id===c.id?{...x,cuotasPagadas:pagadas,saldoCobrado:totalCobrado,saldoPendiente:pendiente,proximoPago:prox?.fechaVenc||"",estado:nuevoEstado,detalleCuotas:det}:x));
+                          }} style={{background:"#10b981",color:"#fff",border:"none",borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
+                            ✓ Cobrado
+                          </button>
                           {clienteInfo?.tel&&(
                             <button onClick={e=>abrirMensaje(c,clienteInfo,e)}
                               style={{display:"flex",alignItems:"center",gap:5,background:"#25D366",color:"#fff",borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer"}}>
-                              <Icon name="whatsapp" size={13}/>{mensajeEditando===c.clienteId?"Cerrar":"Enviar WA"}
+                              <Icon name="whatsapp" size={13}/>{mensajeEditando===c.clienteId?"Cerrar":"WA"}
                             </button>
                           )}
                           <div style={{color:t.sub,fontSize:11,textAlign:"right"}}>
@@ -2344,7 +2465,7 @@ export default function App(){
 
         {/* Contenido móvil */}
         <main style={{flex:1,padding:"14px 14px 80px",overflowY:"auto"}}>
-          {screen==="dashboard"&&<Dashboard clients={clients} creditos={creditos} productos={productos} ventasContado={ventasContado} t={t}/>}
+          {screen==="dashboard"&&<Dashboard clients={clients} creditos={creditos} setCreditos={setCreditos} productos={productos} ventasContado={ventasContado} t={t}/>}
           {screen==="clientes"&&<Clientes clients={clients} setClients={setClients} creditos={creditos} setCreditos={setCreditos} productos={productos} usuarioActual={usuarioActual} t={t}/>}
           {screen==="creditos"&&<Creditos creditos={creditos} setCreditos={setCreditos} clients={clients} usuarioActual={usuarioActual} t={t}/>}
           {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} usuarioActual={usuarioActual} t={t}/>}
@@ -2425,7 +2546,7 @@ export default function App(){
           </div>
         </header>
         <main style={{flex:1,padding:"26px",overflowY:"auto"}}>
-          {screen==="dashboard"&&<Dashboard clients={clients} creditos={creditos} productos={productos} ventasContado={ventasContado} t={t}/>}
+          {screen==="dashboard"&&<Dashboard clients={clients} creditos={creditos} setCreditos={setCreditos} productos={productos} ventasContado={ventasContado} t={t}/>}
           {screen==="clientes"&&<Clientes clients={clients} setClients={setClients} creditos={creditos} setCreditos={setCreditos} productos={productos} usuarioActual={usuarioActual} t={t}/>}
           {screen==="creditos"&&<Creditos creditos={creditos} setCreditos={setCreditos} clients={clients} usuarioActual={usuarioActual} t={t}/>}
           {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} usuarioActual={usuarioActual} t={t}/>}

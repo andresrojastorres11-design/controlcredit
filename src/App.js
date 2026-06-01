@@ -799,6 +799,7 @@ const Dashboard=({clients,creditos,productos,ventasContado=[],t})=>{
   const [mesPDF,setMesPDF]=useState(hoy.getMonth()+1);
   const [anioPDF,setAnioPDF]=useState(hoy.getFullYear());
   const [tabPagos,setTabPagos]=useState("aldia");
+  const [clienteExpandido,setClienteExpandido]=useState(null);
   const [editandoMeta,setEditandoMeta]=useState(false);
   const [meta,setMeta]=useState({ganancia:"",clientes:""});
   const [metaGuardada,setMetaGuardada]=useState({ganancia:0,clientes:0});

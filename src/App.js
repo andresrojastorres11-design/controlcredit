@@ -74,60 +74,121 @@ const generatePDF=(credito)=>{
 };
 
 // PDF de reporte mensual
-const generateReporteMensual=(creditos,clientes,productos,mes,anio)=>{
+const generateReporteMensual=(creditos,clientes,productos,mes,anio,ventasContado=[])=>{
   const fecha=new Date().toLocaleDateString("es-AR");
   const nombreMes=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"][mes-1];
   const fechaDesde=`${anio}-${String(mes).padStart(2,"0")}-01`;
   const fechaHasta=`${anio}-${String(mes).padStart(2,"0")}-${new Date(anio,mes,0).getDate()}`;
-  // Créditos otorgados ese mes
+  const ultimoDia=new Date(anio,mes,0).getDate();
+
+  // ── FILTRAR POR MES ──
   const creditosMes=creditos.filter(c=>c.fechaOtorg>=fechaDesde&&c.fechaOtorg<=fechaHasta);
-  // Pagos recibidos ese mes (cuotas pagadas con fecha en el mes)
-  const pagosMes=creditos.flatMap(c=>(c.historial||[]).filter(h=>h.tipo==="pago"||h.tipo==="pago_cuota").filter(h=>{if(!h.fecha)return false;const partes=h.fecha.split("/");if(partes.length<3)return false;const fechaH=`${partes[2]}-${partes[1].padStart(2,"0")}-${partes[0].padStart(2,"0")}`;return fechaH>=fechaDesde&&fechaH<=fechaHasta;}));
-  const totalPagadoMes=pagosMes.reduce((s,h)=>s+(h.monto||0),0);
-  // Métricas generales
+  const productosMes=productos.filter(p=>p.fechaOtorg&&p.fechaOtorg>=fechaDesde&&p.fechaOtorg<=fechaHasta);
+  const ventasContadoMes=ventasContado.filter(v=>v.fecha&&v.fecha>=fechaDesde&&v.fecha<=fechaHasta);
+
+  // Cobros recibidos en el mes (cuotas pagadas ese mes)
+  const pagosCreditosMes=creditos.flatMap(c=>(c.historial||[]).filter(h=>
+    (h.tipo==="pago_cuota"||h.tipo==="pago_completo")&&h.fecha&&(()=>{
+      const p=h.fecha.split("/");if(p.length<3)return false;
+      const fh=`${p[2]}-${p[1].padStart(2,"0")}-${p[0].padStart(2,"0")}`;
+      return fh>=fechaDesde&&fh<=fechaHasta;
+    })()
+  ));
+  const cobradoCreditosMes=pagosCreditosMes.reduce((s,h)=>s+(h.monto||0),0);
+  const cobradoVentasContadoMes=ventasContadoMes.reduce((s,v)=>s+v.precio_venta,0);
+  const totalCobradoMes=cobradoCreditosMes+cobradoVentasContadoMes;
+
+  // ── MÉTRICAS GENERALES (estado actual) ──
   const creditosActivos=creditos.filter(c=>c.estado!=="Finalizado");
-  const totalEnLaCalle=creditosActivos.reduce((s,c)=>s+(c.monto-c.monto*(c.cuotasPagadas/c.cuotas)),0);
-  const totalPorCobrar=creditosActivos.reduce((s,c)=>s+c.saldoPendiente,0);
-  const gananciaTotal=creditos.reduce((s,c)=>s+c.ganancia,0);
-  const gananciaReal=creditos.reduce((s,c)=>s+(c.ganancia/c.cuotas)*c.cuotasPagadas,0);
-  const morosos=clientes.filter(c=>c.estado==="Moroso");
-  const moraTotal=creditos.filter(c=>c.estado==="Moroso"||c.estado==="Atrasado").reduce((s,c)=>s+c.saldoPendiente,0);
+  const productosActivos=productos.filter(p=>p.estado!=="Finalizado");
+  const totalEnLaCalle=creditosActivos.reduce((s,c)=>s+(c.monto-c.monto*(c.cuotasPagadas/c.cuotas)),0)
+    +productosActivos.reduce((s,p)=>s+(p.inversion-(p.inversion*(p.cuotasPagadas/p.cuotas))),0);
+  const totalPorCobrar=creditosActivos.reduce((s,c)=>s+c.saldoPendiente,0)
+    +productosActivos.reduce((s,p)=>s+(p.saldoPendiente||0),0);
   const totalInvertido=creditos.reduce((s,c)=>s+c.monto,0)+productos.reduce((s,p)=>s+p.inversion,0);
-  const rendimiento=totalInvertido>0?((gananciaTotal/totalInvertido)*100).toFixed(1):0;
-  const filasCredMes=creditosMes.map(c=>`<tr><td>${c.clienteNombre}</td><td>${fmt(c.monto)}</td><td>${fmt(c.totalCobrar)}</td><td>${fmt(c.ganancia)}</td><td>${c.frecuencia}</td><td><span class="badge ${c.estado==="Al día"?"badge-verde":c.estado==="Moroso"?"badge-rojo":"badge-amarillo"}">${c.estado}</span></td></tr>`).join("");
-  const filasMorosos=morosos.map(m=>{const deuda=creditos.filter(c=>c.clienteId===m.id&&c.estado!=="Finalizado").reduce((s,c)=>s+c.saldoPendiente,0);return`<tr><td>${m.nombre} ${m.apellido}</td><td>${m.tel||"-"}</td><td style="color:#ef4444;font-weight:700">${fmt(deuda)}</td></tr>`;}).join("");
+  const gananciaEsperada=creditos.reduce((s,c)=>s+c.ganancia,0)+productos.reduce((s,p)=>s+p.ganancia,0);
+  const gananciaRealizada=creditos.reduce((s,c)=>s+(c.ganancia/c.cuotas)*c.cuotasPagadas,0)
+    +productos.reduce((s,p)=>s+(p.ganancia/p.cuotas)*p.cuotasPagadas,0)
+    +ventasContado.reduce((s,v)=>s+v.ganancia,0);
+  const moraTotal=creditos.filter(c=>c.estado==="Moroso"||c.estado==="Atrasado").reduce((s,c)=>s+c.saldoPendiente,0);
+  const rendimiento=totalInvertido>0?((gananciaEsperada/totalInvertido)*100).toFixed(1):0;
+  const morosos=clientes.filter(c=>c.estado==="Moroso");
+
+  // ── MÉTRICAS DEL MES ──
+  const capitalMes=creditosMes.reduce((s,c)=>s+c.monto,0);
+  const inversionProdMes=productosMes.reduce((s,p)=>s+p.inversion,0);
+  const gananciaMes=creditosMes.reduce((s,c)=>s+c.ganancia,0)+productosMes.reduce((s,p)=>s+p.ganancia,0)+ventasContadoMes.reduce((s,v)=>s+v.ganancia,0);
+
+  // ── FILAS ──
+  const filasCredMes=creditosMes.map(c=>`<tr>
+    <td>${c.clienteNombre}</td><td>${fmt(c.monto)}</td><td>${fmt(c.totalCobrar)}</td>
+    <td style="color:#10b981;font-weight:700">${fmt(c.ganancia)}</td><td>${c.frecuencia}</td>
+    <td><span class="badge ${c.estado==="Al día"?"badge-verde":c.estado==="Moroso"?"badge-rojo":"badge-amarillo"}">${c.estado}</span></td>
+  </tr>`).join("");
+
+  const filasProdMes=productosMes.map(p=>`<tr>
+    <td>${p.clienteNombre}</td><td>${p.producto}</td><td>${fmt(p.inversion)}</td>
+    <td>${fmt(p.precioFinanciado)}</td><td style="color:#10b981;font-weight:700">${fmt(p.ganancia)}</td>
+    <td>${p.frecuencia}</td><td><span class="badge badge-verde">${p.estado}</span></td>
+  </tr>`).join("");
+
+  const filasVentasMes=ventasContadoMes.map(v=>`<tr>
+    <td>${v.producto}</td><td>${v.cliente_nombre||"—"}</td><td>${fmt(v.costo)}</td>
+    <td>${fmt(v.precio_venta)}</td><td style="color:#10b981;font-weight:700">${fmt(v.ganancia)}</td>
+    <td>${fmtFecha(v.fecha)}</td>
+  </tr>`).join("");
+
+  const filasMorosos=morosos.map(m=>{
+    const deuda=creditos.filter(c=>c.clienteId===m.id&&c.estado!=="Finalizado").reduce((s,c)=>s+c.saldoPendiente,0);
+    return`<tr><td>${m.nombre} ${m.apellido}</td><td>${m.tel||"—"}</td><td style="color:#ef4444;font-weight:700">${fmt(deuda)}</td></tr>`;
+  }).join("");
+
   const html=`
     <div class="header">
       <div><div class="logo">Control<span>Credit</span></div><div class="subtitulo">Reporte Mensual — ${nombreMes} ${anio}</div></div>
-      <div style="text-align:right"><div style="font-size:13px;font-weight:700">Período</div><div style="font-size:11px;opacity:0.8">01/${String(mes).padStart(2,"0")}/${anio} al ${new Date(anio,mes,0).getDate()}/${String(mes).padStart(2,"0")}/${anio}</div><div style="font-size:10px;opacity:0.7;margin-top:4px">Generado: ${fecha}</div></div>
+      <div style="text-align:right"><div style="font-size:13px;font-weight:700">Período del mes</div><div style="font-size:11px;opacity:0.8">01/${String(mes).padStart(2,"0")}/${anio} al ${ultimoDia}/${String(mes).padStart(2,"0")}/${anio}</div><div style="font-size:10px;opacity:0.7;margin-top:4px">Generado: ${fecha}</div></div>
     </div>
+
     <div class="seccion">
-      <div class="seccion-titulo">📊 Métricas generales del negocio</div>
+      <div class="seccion-titulo">📊 Estado general del negocio</div>
       <div class="seccion-body" style="text-align:center">
         <div class="metrica"><div class="metrica-label">Plata en la calle</div><div class="metrica-valor">${fmt(totalEnLaCalle)}</div></div>
         <div class="metrica"><div class="metrica-label">Por cobrar total</div><div class="metrica-valor">${fmt(totalPorCobrar)}</div></div>
         <div class="metrica"><div class="metrica-label">Total invertido</div><div class="metrica-valor">${fmt(totalInvertido)}</div></div>
-        <div class="metrica"><div class="metrica-label">Ganancia esperada</div><div class="metrica-valor" style="color:#8b5cf6">${fmt(gananciaTotal)}</div></div>
-        <div class="metrica"><div class="metrica-label">Ganancia realizada</div><div class="metrica-valor" style="color:#10b981">${fmt(gananciaReal)}</div></div>
+        <div class="metrica"><div class="metrica-label">Ganancia esperada</div><div class="metrica-valor" style="color:#8b5cf6">${fmt(gananciaEsperada)}</div></div>
+        <div class="metrica"><div class="metrica-label">Ganancia realizada</div><div class="metrica-valor" style="color:#10b981">${fmt(gananciaRealizada)}</div></div>
         <div class="metrica"><div class="metrica-label">Rendimiento</div><div class="metrica-valor" style="color:#8b5cf6">${rendimiento}%</div></div>
         <div class="metrica"><div class="metrica-label">Mora total</div><div class="metrica-valor" style="color:#ef4444">${fmt(moraTotal)}</div></div>
-        <div class="metrica"><div class="metrica-label">Cobrado en el mes</div><div class="metrica-valor" style="color:#10b981">${fmt(totalPagadoMes)}</div></div>
+        <div class="metrica"><div class="metrica-label">Clientes totales</div><div class="metrica-valor">${clientes.length}</div></div>
       </div>
     </div>
+
     <div class="seccion">
-      <div class="seccion-titulo">📋 Resumen del mes</div>
-      <div class="seccion-body">
-        <table>
-          <tr><td>Total de clientes</td><td style="font-weight:700">${clientes.length}</td><td>Clientes al día</td><td style="font-weight:700;color:#10b981">${clientes.filter(c=>c.estado==="Al día"||c.estado==="Premium").length}</td></tr>
-          <tr><td>Clientes morosos</td><td style="font-weight:700;color:#ef4444">${morosos.length}</td><td>Créditos activos</td><td style="font-weight:700">${creditosActivos.length}</td></tr>
-          <tr><td>Créditos otorgados este mes</td><td style="font-weight:700">${creditosMes.length}</td><td>Productos financiados activos</td><td style="font-weight:700">${productos.filter(p=>p.estado==="Activo").length}</td></tr>
-          <tr><td>Capital otorgado este mes</td><td style="font-weight:700">${fmt(creditosMes.reduce((s,c)=>s+c.monto,0))}</td><td>Pagos registrados este mes</td><td style="font-weight:700">${pagosMes.length}</td></tr>
-        </table>
+      <div class="seccion-titulo">📅 Actividad de ${nombreMes} ${anio}</div>
+      <div class="seccion-body" style="text-align:center">
+        <div class="metrica"><div class="metrica-label">Créditos otorgados</div><div class="metrica-valor">${creditosMes.length}</div></div>
+        <div class="metrica"><div class="metrica-label">Capital prestado</div><div class="metrica-valor">${fmt(capitalMes)}</div></div>
+        <div class="metrica"><div class="metrica-label">Ventas financiadas</div><div class="metrica-valor">${productosMes.length}</div></div>
+        <div class="metrica"><div class="metrica-label">Inversión en productos</div><div class="metrica-valor">${fmt(inversionProdMes)}</div></div>
+        <div class="metrica"><div class="metrica-label">Ventas de contado</div><div class="metrica-valor">${ventasContadoMes.length}</div></div>
+        <div class="metrica"><div class="metrica-label">Cobrado en el mes</div><div class="metrica-valor" style="color:#10b981">${fmt(totalCobradoMes)}</div></div>
+        <div class="metrica"><div class="metrica-label">Ganancia del mes</div><div class="metrica-valor" style="color:#10b981">${fmt(gananciaMes)}</div></div>
+        <div class="metrica"><div class="metrica-label">Morosos</div><div class="metrica-valor" style="color:#ef4444">${morosos.length}</div></div>
       </div>
     </div>
-    ${creditosMes.length>0?`<div class="seccion"><div class="seccion-titulo">💳 Créditos otorgados en ${nombreMes} ${anio}</div><div class="seccion-body"><table><tr><th>Cliente</th><th>Capital</th><th>Total cobrar</th><th>Ganancia</th><th>Frecuencia</th><th>Estado</th></tr>${filasCredMes}</table></div></div>`:""}
-    ${morosos.length>0?`<div class="seccion"><div class="seccion-titulo">⚠️ Clientes morosos (${morosos.length})</div><div class="seccion-body"><table><tr><th>Cliente</th><th>Teléfono</th><th>Deuda total</th></tr>${filasMorosos}</table></div></div>`:""}
-    <div class="footer">ControlCredit &copy; ${new Date().getFullYear()} — Reporte ${nombreMes} ${anio} — Documento confidencial</div>
+
+    ${creditosMes.length>0?`<div class="seccion"><div class="seccion-titulo">💳 Créditos otorgados en ${nombreMes} ${anio} (${creditosMes.length})</div><div class="seccion-body"><table><tr><th>Cliente</th><th>Capital</th><th>Total cobrar</th><th>Ganancia</th><th>Frecuencia</th><th>Estado</th></tr>${filasCredMes}</table></div></div>`:""}
+
+    ${productosMes.length>0?`<div class="seccion"><div class="seccion-titulo">🛒 Ventas financiadas en ${nombreMes} ${anio} (${productosMes.length})</div><div class="seccion-body"><table><tr><th>Cliente</th><th>Producto</th><th>Inversión</th><th>Financiado</th><th>Ganancia</th><th>Frecuencia</th><th>Estado</th></tr>${filasProdMes}</table></div></div>`:""}
+
+    ${ventasContadoMes.length>0?`<div class="seccion"><div class="seccion-titulo">💵 Ventas de contado en ${nombreMes} ${anio} (${ventasContadoMes.length})</div><div class="seccion-body"><table><tr><th>Producto</th><th>Cliente</th><th>Costo</th><th>Precio venta</th><th>Ganancia</th><th>Fecha</th></tr>${filasVentasMes}</table></div></div>`:""}
+
+    ${morosos.length>0?`<div class="seccion"><div class="seccion-titulo">⚠️ Clientes morosos al cierre del mes (${morosos.length})</div><div class="seccion-body"><table><tr><th>Cliente</th><th>Teléfono</th><th>Deuda total</th></tr>${filasMorosos}</table></div></div>`:""}
+
+    <div style="background:#f0f9ff;border-left:4px solid #3b82f6;padding:12px 16px;font-size:11px;color:#1e40af;border-radius:0 8px 8px 0;margin-bottom:16px">
+      Reporte generado automáticamente por ControlCredit. Documento confidencial — uso interno.
+    </div>
+    <div class="footer">ControlCredit &copy; ${new Date().getFullYear()} — Reporte ${nombreMes} ${anio} — Confidencial</div>
   `;
   abrirPDF(html,`Reporte_${nombreMes}_${anio}`);
 };
@@ -1034,7 +1095,7 @@ const Dashboard=({clients,creditos,productos,ventasContado=[],t})=>{
           <select value={anioPDF} onChange={e=>setAnioPDF(+e.target.value)} style={{padding:"5px 8px",borderRadius:6,border:`1px solid ${t.border}`,background:t.input,color:t.text,fontSize:12,outline:"none"}}>
             {[2024,2025,2026,2027].map(a=><option key={a} value={a}>{a}</option>)}
           </select>
-          <button onClick={()=>generateReporteMensual(creditos,clients,productos,mesPDF,anioPDF)} style={{background:"#ef4444",color:"#fff",border:"none",borderRadius:8,padding:"7px 14px",fontWeight:700,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
+          <button onClick={()=>generateReporteMensual(creditos,clients,productos,mesPDF,anioPDF,ventasContado)} style={{background:"#ef4444",color:"#fff",border:"none",borderRadius:8,padding:"7px 14px",fontWeight:700,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
             <Icon name="pdf" size={14}/>Generar PDF
           </button>
         </div>

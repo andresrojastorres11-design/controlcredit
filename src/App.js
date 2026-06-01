@@ -1816,8 +1816,6 @@ const Papelera=({setCreditos,setProductos,t})=>{
   const [items,setItems]=useState([]);
   const [loading,setLoading]=useState(true);
 
-  useEffect(()=>{cargarPapelera();},[]); // eslint-disable-line
-
   const cargarPapelera=async()=>{
     setLoading(true);
     const {data}=await sb.from("papelera").select("*").order("created_at",{ascending:false});
@@ -1827,6 +1825,8 @@ const Papelera=({setCreditos,setProductos,t})=>{
     }
     setLoading(false);
   };
+
+  useEffect(()=>{cargarPapelera();},[]);
 
   const restaurar=async(item)=>{
     const d=item.datos;
@@ -2096,3 +2096,4 @@ export default function App(){
     </div>
   );
 }
+    

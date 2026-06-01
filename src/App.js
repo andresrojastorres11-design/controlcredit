@@ -2484,16 +2484,24 @@ export default function App(){
             </button>
           ))}
           {/* Menú más */}
-          <button onClick={()=>setScreen(screen==="usuarios"?"dashboard":"usuarios")}
-            style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"4px 8px",background:"none",border:"none",cursor:"pointer",color:screen==="usuarios"?t.accent:t.sidebarText,flex:1}}>
+          <button onClick={()=>setScreen(screen==="usuarios"||screen==="papelera"?"dashboard":screen==="alertas"?"usuarios":"usuarios")}
+            style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"4px 8px",background:"none",border:"none",cursor:"pointer",color:(screen==="usuarios"||screen==="papelera")?t.accent:t.sidebarText,flex:1}}>
             <Icon name="menu" size={20}/>
             <span style={{fontSize:9,fontWeight:400}}>Más</span>
           </button>
         </nav>
 
-        {/* Botón cerrar sesión flotante en menú más */}
-        {screen==="usuarios"&&(
-          <div style={{position:"fixed",bottom:70,right:14,zIndex:300}}>
+        {/* Menú flotante "Más" con opciones extra */}
+        {(screen==="usuarios"||screen==="papelera")&&(
+          <div style={{position:"fixed",bottom:70,right:14,zIndex:300,display:"flex",flexDirection:"column",gap:8}}>
+            <button onClick={()=>setScreen("papelera")}
+              style={{background:screen==="papelera"?t.accent:t.card,color:screen==="papelera"?"#fff":t.text,border:`1px solid ${t.border}`,borderRadius:12,padding:"10px 16px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 4px 16px rgba(0,0,0,0.2)"}}>
+              🗑 Papelera
+            </button>
+            {esAdmin&&<button onClick={()=>setScreen("usuarios")}
+              style={{background:screen==="usuarios"?t.accent:t.card,color:screen==="usuarios"?"#fff":t.text,border:`1px solid ${t.border}`,borderRadius:12,padding:"10px 16px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 4px 16px rgba(0,0,0,0.2)"}}>
+              👥 Usuarios
+            </button>}
             <button onClick={()=>{setLoggedIn(false);setUsuarioActual(null);setAllClients([]);setAllCreditos([]);setAllProductos([]);}}
               style={{background:"#ef4444",color:"#fff",border:"none",borderRadius:12,padding:"10px 16px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 4px 16px rgba(239,68,68,0.4)"}}>
               <Icon name="logout" size={15}/>Cerrar sesión

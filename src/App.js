@@ -2273,7 +2273,224 @@ const Alertas=({creditos,clients,t})=>{
   );
 };
 
-// ── PAPELERA ──────────────────────────────────────────────────────────────────
+// ── PRESUPUESTO ───────────────────────────────────────────────────────────────
+const Presupuesto=({t})=>{
+  const [monto,setMonto]=useState("");
+  const [porcentaje,setPorcentaje]=useState("25");
+  const [cuotas,setCuotas]=useState("4");
+  const [frecuencia,setFrecuencia]=useState("Semanal");
+  const [tipo,setTipo]=useState("Crédito");
+
+  const montoN=+monto||0;
+  const pctN=+porcentaje||0;
+  const cuotasN=+cuotas||1;
+  const interes=montoN*(pctN/100);
+  const totalCobrar=montoN+interes;
+  const valorCuota=totalCobrar/cuotasN;
+
+  const fechasCuotas=()=>{
+    if(!montoN)return[];
+    const hoy=new Date();
+    const dias=frecuencia==="Semanal"?7:frecuencia==="Quincenal"?14:30;
+    return Array.from({length:cuotasN},(_,i)=>{
+      const d=new Date(hoy);
+      d.setDate(hoy.getDate()+dias*(i+1));
+      return{num:i+1,fecha:d.toLocaleDateString("es-AR"),valor:valorCuota};
+    });
+  };
+
+  const cuotasDetalle=fechasCuotas();
+
+  const generarPDF=()=>{
+    if(!montoN||!pctN){alert("Ingresá el monto y el porcentaje");return;}
+    const filas=cuotasDetalle.map(c=>`
+      <tr>
+        <td style="text-align:center;font-weight:700">${c.num}</td>
+        <td style="text-align:center">${c.fecha}</td>
+        <td style="text-align:center;font-weight:800;color:#1e40af">${fmt(c.valor)}</td>
+      </tr>`).join("");
+
+    const html=`
+      <div class="header">
+        <div>
+          <div class="logo">Control<span>Credit</span></div>
+          <div class="subtitulo">Presupuesto de ${tipo}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:13px;font-weight:700">PRESUPUESTO</div>
+          <div style="font-size:11px;opacity:0.8">Fecha: ${new Date().toLocaleDateString("es-AR")}</div>
+          <div style="font-size:10px;opacity:0.7;margin-top:2px">Válido por 7 días</div>
+        </div>
+      </div>
+
+      <div class="seccion">
+        <div class="seccion-titulo">💰 Detalle del ${tipo}</div>
+        <div class="seccion-body" style="text-align:center">
+          <div class="metrica"><div class="metrica-label">Monto solicitado</div><div class="metrica-valor">${fmt(montoN)}</div></div>
+          <div class="metrica"><div class="metrica-label">Interés (${pctN}%)</div><div class="metrica-valor" style="color:#8b5cf6">${fmt(interes)}</div></div>
+          <div class="metrica"><div class="metrica-label">Total a pagar</div><div class="metrica-valor" style="color:#1e40af">${fmt(totalCobrar)}</div></div>
+          <div class="metrica"><div class="metrica-label">Cuotas</div><div class="metrica-valor">${cuotasN} ${frecuencia}${cuotasN!==1?"s":""}</div></div>
+          <div class="metrica"><div class="metrica-label">Valor por cuota</div><div class="metrica-valor" style="color:#10b981">${fmt(valorCuota)}</div></div>
+        </div>
+      </div>
+
+      <div class="seccion">
+        <div class="seccion-titulo">📅 Cronograma de pagos</div>
+        <div class="seccion-body">
+          <table>
+            <thead><tr style="background:#f8fafc"><th style="text-align:center;padding:10px">Cuota #</th><th style="text-align:center;padding:10px">Fecha de pago</th><th style="text-align:center;padding:10px">Monto</th></tr></thead>
+            <tbody>${filas}</tbody>
+            <tfoot><tr style="background:#1e3a8a;color:#fff"><td style="text-align:center;padding:10px;font-weight:700" colspan="2">TOTAL</td><td style="text-align:center;padding:10px;font-weight:900">${fmt(totalCobrar)}</td></tr></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div style="background:#f0f9ff;border-left:4px solid #3b82f6;padding:14px 16px;font-size:12px;color:#1e40af;border-radius:0 8px 8px 0;margin-bottom:16px;line-height:1.6">
+        📌 <strong>Condiciones:</strong> Este presupuesto es válido por 7 días desde la fecha de emisión. Los montos están expresados en pesos argentinos. El otorgamiento está sujeto a aprobación crediticia.
+      </div>
+      <div class="footer">ControlCredit &copy; ${new Date().getFullYear()} — Documento no válido como recibo de pago — Solo informativo</div>
+    `;
+    abrirPDF(html,"Presupuesto");
+  };
+
+  return(
+    <div>
+      <div style={{marginBottom:22}}>
+        <h1 style={{fontSize:22,fontWeight:800,color:t.text,margin:"0 0 4px"}}>🧮 Calculadora de Presupuesto</h1>
+        <p style={{color:t.sub,margin:0,fontSize:13}}>Calculá cuotas y generá el PDF para enviar al cliente</p>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+        {/* PANEL IZQUIERDO — INPUTS */}
+        <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"24px"}}>
+          <h3 style={{margin:"0 0 18px",fontSize:15,fontWeight:700,color:t.text}}>Configurar presupuesto</h3>
+
+          {/* Tipo */}
+          <div style={{marginBottom:16}}>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Tipo</label>
+            <div style={{display:"flex",gap:8}}>
+              {["Crédito","Venta"].map(op=>(
+                <button key={op} onClick={()=>setTipo(op)}
+                  style={{flex:1,padding:"9px",borderRadius:8,border:`1px solid ${tipo===op?t.accent:t.border}`,background:tipo===op?`${t.accent}15`:"transparent",color:tipo===op?t.accent:t.sub,fontWeight:tipo===op?700:500,fontSize:13,cursor:"pointer"}}>
+                  {op==="Crédito"?"💳 Crédito":"🛒 Venta"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Monto */}
+          <div style={{marginBottom:16}}>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Monto ($)</label>
+            <input type="number" value={monto} onChange={e=>setMonto(e.target.value)} placeholder="Ej: 100000"
+              style={{width:"100%",padding:"10px 14px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:15,outline:"none",boxSizing:"border-box",fontWeight:600}}/>
+          </div>
+
+          {/* Porcentaje */}
+          <div style={{marginBottom:16}}>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Interés / Porcentaje (%)</label>
+            <div style={{display:"flex",gap:8,marginBottom:8}}>
+              {["10","15","20","25","30","40","50"].map(p=>(
+                <button key={p} onClick={()=>setPorcentaje(p)}
+                  style={{padding:"6px 10px",borderRadius:7,border:`1px solid ${porcentaje===p?t.accent:t.border}`,background:porcentaje===p?t.accent:"transparent",color:porcentaje===p?"#fff":t.sub,fontWeight:600,fontSize:12,cursor:"pointer"}}>
+                  {p}%
+                </button>
+              ))}
+            </div>
+            <input type="number" value={porcentaje} onChange={e=>setPorcentaje(e.target.value)} placeholder="Ej: 25"
+              style={{width:"100%",padding:"9px 14px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+          </div>
+
+          {/* Frecuencia */}
+          <div style={{marginBottom:16}}>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Frecuencia de pago</label>
+            <div style={{display:"flex",gap:8}}>
+              {["Semanal","Quincenal","Mensual"].map(f=>(
+                <button key={f} onClick={()=>setFrecuencia(f)}
+                  style={{flex:1,padding:"9px 6px",borderRadius:8,border:`1px solid ${frecuencia===f?t.accent:t.border}`,background:frecuencia===f?`${t.accent}15`:"transparent",color:frecuencia===f?t.accent:t.sub,fontWeight:frecuencia===f?700:500,fontSize:12,cursor:"pointer"}}>
+                  {f}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Cuotas */}
+          <div style={{marginBottom:20}}>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Cantidad de cuotas</label>
+            <div style={{display:"flex",gap:8,marginBottom:8}}>
+              {["1","2","3","4","6","8","12"].map(c=>(
+                <button key={c} onClick={()=>setCuotas(c)}
+                  style={{padding:"6px 10px",borderRadius:7,border:`1px solid ${cuotas===c?t.accent:t.border}`,background:cuotas===c?t.accent:"transparent",color:cuotas===c?"#fff":t.sub,fontWeight:600,fontSize:12,cursor:"pointer"}}>
+                  {c}
+                </button>
+              ))}
+            </div>
+            <input type="number" value={cuotas} onChange={e=>setCuotas(e.target.value)} placeholder="Ej: 4"
+              style={{width:"100%",padding:"9px 14px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+          </div>
+
+          <button onClick={generarPDF}
+            style={{width:"100%",padding:"13px",borderRadius:10,border:"none",background:"#ef4444",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+            <Icon name="pdf" size={18}/>Generar PDF del presupuesto
+          </button>
+        </div>
+
+        {/* PANEL DERECHO — PREVIEW */}
+        <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"24px"}}>
+          <h3 style={{margin:"0 0 18px",fontSize:15,fontWeight:700,color:t.text}}>Vista previa</h3>
+
+          {!montoN?(
+            <div style={{textAlign:"center",padding:"40px 0",color:t.sub}}>
+              <div style={{fontSize:40,marginBottom:12}}>🧮</div>
+              <div style={{fontSize:13}}>Ingresá el monto y el porcentaje para ver el presupuesto</div>
+            </div>
+          ):(
+            <>
+              {/* Métricas */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:20}}>
+                {[
+                  {label:"Monto",value:fmt(montoN),color:t.text},
+                  {label:`Interés ${pctN}%`,value:fmt(interes),color:"#8b5cf6"},
+                  {label:"Total a pagar",value:fmt(totalCobrar),color:"#1e40af"},
+                  {label:"Valor cuota",value:fmt(valorCuota),color:"#10b981"},
+                ].map(({label,value,color})=>(
+                  <div key={label} style={{background:t.bg,borderRadius:10,padding:"12px 14px",border:`1px solid ${t.border}`}}>
+                    <div style={{fontSize:10,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>{label}</div>
+                    <div style={{fontSize:17,fontWeight:900,color}}>{value}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Tabla de cuotas */}
+              <div style={{background:t.bg,borderRadius:10,overflow:"hidden",border:`1px solid ${t.border}`}}>
+                <div style={{padding:"10px 14px",background:`${t.accent}15`,fontSize:12,fontWeight:700,color:t.accent}}>
+                  📅 {cuotasN} cuota{cuotasN!==1?"s":""} {frecuencia.toLowerCase()}{cuotasN!==1?"s":""}
+                </div>
+                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead><tr style={{background:t.bg}}>{["#","Fecha","Monto"].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"center",fontSize:10,fontWeight:700,color:t.sub,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {cuotasDetalle.map(c=>(
+                      <tr key={c.num} style={{borderTop:`1px solid ${t.border}`}}>
+                        <td style={{padding:"10px 12px",textAlign:"center",fontWeight:700,color:t.text}}>{c.num}</td>
+                        <td style={{padding:"10px 12px",textAlign:"center",color:t.sub}}>{c.fecha}</td>
+                        <td style={{padding:"10px 12px",textAlign:"center",fontWeight:800,color:"#10b981",fontSize:14}}>{fmt(c.valor)}</td>
+                      </tr>
+                    ))}
+                    <tr style={{background:`${t.accent}10`,borderTop:`2px solid ${t.accent}`}}>
+                      <td colSpan={2} style={{padding:"10px 12px",textAlign:"center",fontWeight:700,color:t.text}}>TOTAL</td>
+                      <td style={{padding:"10px 12px",textAlign:"center",fontWeight:900,color:"#1e40af",fontSize:15}}>{fmt(totalCobrar)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
 const Papelera=({setCreditos,setProductos,t})=>{
   const [items,setItems]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -2440,6 +2657,7 @@ export default function App(){
     {id:"productos",label:"Productos",icon:"productos"},
     {id:"cartera",label:"Cartera",icon:"cartera"},
     {id:"alertas",label:"Alertas",icon:"alert"},
+    {id:"presupuesto",label:"Presupuesto",icon:"coin"},
     ...(esAdmin?[{id:"usuarios",label:"Usuarios",icon:"users"}]:[]),
     {id:"papelera",label:"Papelera",icon:"trash"},
   ];
@@ -2472,6 +2690,7 @@ export default function App(){
           {screen==="cartera"&&<Cartera creditos={creditos} productos={productos} clients={clients} t={t}/>}
           {screen==="alertas"&&<Alertas creditos={creditos} clients={clients} t={t}/>}
           {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t} allClients={allClients} allCreditos={allCreditos} allProductos={allProductos} allVentasContado={allVentasContado}/>}
+          {screen==="presupuesto"&&<Presupuesto t={t}/>}
           {screen==="papelera"&&<Papelera setCreditos={setCreditos} setProductos={setProductos} t={t}/>}
         </main>
         <nav style={{position:"fixed",bottom:0,left:0,right:0,background:t.sidebar,borderTop:"1px solid #ffffff15",display:"flex",justifyContent:"space-around",padding:"6px 0 8px",zIndex:200,boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
@@ -2561,6 +2780,7 @@ export default function App(){
           {screen==="cartera"&&<Cartera creditos={creditos} productos={productos} clients={clients} t={t}/>}
           {screen==="alertas"&&<Alertas creditos={creditos} clients={clients} t={t}/>}
           {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t} allClients={allClients} allCreditos={allCreditos} allProductos={allProductos} allVentasContado={allVentasContado}/>}
+          {screen==="presupuesto"&&<Presupuesto t={t}/>}
           {screen==="papelera"&&<Papelera setCreditos={setCreditos} setProductos={setProductos} t={t}/>}
         </main>
       </div>

@@ -2011,6 +2011,7 @@ export default function App(){
           {screen==="alertas"&&<Alertas creditos={creditos} clients={clients} t={t}/>}
           {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t} allClients={allClients} allCreditos={allCreditos} allProductos={allProductos} allVentasContado={allVentasContado}/>}
           {screen==="papelera"&&<Papelera setCreditos={setCreditos} setProductos={setProductos} t={t}/>}
+        </main>
         <nav style={{position:"fixed",bottom:0,left:0,right:0,background:t.sidebar,borderTop:"1px solid #ffffff15",display:"flex",justifyContent:"space-around",padding:"6px 0 8px",zIndex:200,boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
           {NAV.slice(0,5).map(n=>(
             <button key={n.id} onClick={()=>setScreen(n.id)}

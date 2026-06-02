@@ -1173,12 +1173,28 @@ const Dashboard=({clients,creditos,setCreditos,productos,ventasContado=[],t})=>{
   // Por cobrar = saldo pendiente créditos + saldo pendiente productos
   const porCobrar=activos.reduce((s,c)=>s+c.saldoPendiente,0)
     +productosActivos.reduce((s,p)=>s+Math.max(0,p.precioFinanciado-p.saldoCobrado),0);
-  // Ganancia esperada = créditos + ventas financiadas
-  const ganEsp=creditos.reduce((s,c)=>s+c.ganancia,0)
-    +productos.reduce((s,p)=>s+p.ganancia,0);
-  // Ganancia realizada = créditos cobrados + productos cobrados + ventas contado
-  const ganReal=creditos.reduce((s,c)=>s+(c.ganancia/c.cuotas)*c.cuotasPagadas,0)
-    +productos.reduce((s,p)=>s+(p.ganancia/p.cuotas)*p.cuotasPagadas,0)
+  // Ganancia esperada = total a cobrar - capital prestado (incluye moras editadas)
+  const ganEsp=creditos.reduce((s,c)=>{
+    const totalReal=(c.detalleCuotas&&c.detalleCuotas.length>0)
+      ?c.detalleCuotas.reduce((ss,d)=>ss+(d.valorCuotaEditado||c.valorCuota),0)
+      :c.totalCobrar;
+    return s+(totalReal-c.monto);
+  },0)+productos.reduce((s,p)=>s+p.ganancia,0);
+
+  // Ganancia realizada = lo efectivamente cobrado - capital recuperado
+  // Así si cobraste $120 en vez de $100 (mora), impacta +$20 extra
+  // Si cobraste $80 en vez de $100 (descuento), impacta -$20
+  const ganReal=creditos.reduce((s,c)=>{
+    const capitalPorCuota=c.monto/c.cuotas;
+    const capitalRecuperado=capitalPorCuota*c.cuotasPagadas;
+    const gananciaReal=c.saldoCobrado-capitalRecuperado;
+    return s+gananciaReal;
+  },0)
+    +productos.reduce((s,p)=>{
+      const capitalPorCuota=p.inversion/p.cuotas;
+      const capitalRecuperado=capitalPorCuota*p.cuotasPagadas;
+      return s+p.saldoCobrado-capitalRecuperado;
+    },0)
     +(ventasContado||[]).reduce((s,v)=>s+v.ganancia,0);
   const nMorosos=clients.filter(c=>c.estado==="Moroso").length;
   const nAlDia=clients.filter(c=>c.estado==="Al día"||c.estado==="Premium").length;
@@ -1186,15 +1202,21 @@ const Dashboard=({clients,creditos,setCreditos,productos,ventasContado=[],t})=>{
   const COLORS=["#3b82f6","#ef4444","#f59e0b","#8b5cf6"];
   const pie=[{name:"Al día",value:nAlDia},{name:"Morosos",value:nMorosos},{name:"Atrasados",value:clients.filter(c=>c.estado==="Atrasado").length}].filter(d=>d.value>0);
 
-  // Flujo de efectivo
+  // Flujo de efectivo — usa valores reales incluyendo moras y descuentos
   const totalCobradoReal=creditos.reduce((s,c)=>s+c.saldoCobrado,0)
     +productos.reduce((s,p)=>s+p.saldoCobrado,0)
     +(ventasContado||[]).reduce((s,v)=>s+v.precio_venta,0);
-  const totalPendienteReal=creditos.reduce((s,c)=>s+c.saldoPendiente,0)
+  // Total proyectado = suma de valores reales de cada cuota (con moras/descuentos aplicados)
+  const totalProyectadoCreditos=creditos.reduce((s,c)=>{
+    if(c.detalleCuotas&&c.detalleCuotas.length>0)
+      return s+c.detalleCuotas.reduce((ss,d)=>ss+(d.valorCuotaEditado||c.valorCuota),0);
+    return s+c.totalCobrar;
+  },0);
+  const totalPendienteReal=Math.max(0,totalProyectadoCreditos-creditos.reduce((s,c)=>s+c.saldoCobrado,0))
     +productosActivos.reduce((s,p)=>s+Math.max(0,p.precioFinanciado-p.saldoCobrado),0);
   const flujoTotal=totalCobradoReal+totalPendienteReal;
-  const capitalRecuperado=creditos.reduce((s,c)=>s+c.monto*(c.cuotasPagadas/c.cuotas),0);
-  const interesesCobrados=Math.max(0,totalCobradoReal-capitalRecuperado);
+  const capitalRecuperadoTotal=creditos.reduce((s,c)=>s+(c.monto/c.cuotas)*c.cuotasPagadas,0);
+  const interesesCobrados=Math.max(0,creditos.reduce((s,c)=>s+c.saldoCobrado,0)-capitalRecuperadoTotal);
   const morasCobradas=creditos.reduce((s,c)=>{
     const det=c.detalleCuotas||[];
     return s+det.reduce((ss,d)=>{const extra=(d.valorCuotaEditado||0)-(c.valorCuota||0);return ss+(extra>0&&d.estado==="Pagada"?extra:0);},0);

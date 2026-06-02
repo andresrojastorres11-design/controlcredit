@@ -726,51 +726,38 @@ const TablaCuotas=({credito,onActualizar,t})=>{
                       {d.estado!=="Pagada"&&(()=>{
                         const vc=d.valorCuotaEditado||credito.valorCuota;
                         const gananciaCuota=credito.ganancia/credito.cuotas;
-                        const descuento10=gananciaCuota*0.10;
-                        const montoCon10=Math.round(vc-descuento10);
-                        const descuento20=gananciaCuota*0.20;
-                        const montoCon20=Math.round(vc-descuento20);
-                        // Solo mostrar si la cuota no está vencida (es futura)
+                        const capitalCuota=credito.monto/credito.cuotas;
                         const esAnticipada=d.fechaVenc&&new Date(d.fechaVenc)>new Date();
                         if(!esAnticipada)return null;
                         return(
-                          <div style={{position:"relative",display:"inline-block"}}>
-                            <button
-                              onClick={()=>{
-                                const opcion=window.confirm(
-                                  `🎁 Pago anticipado — Cuota ${d.num}\n\nValor original: ${fmt(vc)}\nGanancia de esta cuota: ${fmt(gananciaCuota)}\n\n¿Qué descuento aplicar?\n\nOK = 10% descuento → pagá ${fmt(montoCon10)}\nCancelar = ver opción 20%`
-                                );
-                                if(opcion){
-                                  const confirmado=window.confirm(`Aplicar 10% de descuento\n\nEl cliente paga: ${fmt(montoCon10)}\nDescuento aplicado: ${fmt(descuento10)}\n\n¿Confirmar?`);
-                                  if(!confirmado)return;
-                                  const nuevos=[...detalles];
-                                  nuevos[i]={...nuevos[i],montoPagado:montoCon10,estado:"Pagada",fechaPago:new Date().toLocaleDateString("es-AR"),valorCuotaEditado:montoCon10};
-                                  const totalCobrado=nuevos.reduce((s,x)=>s+x.montoPagado,0);
-                                  const nuevoTotal=nuevos.reduce((s,x)=>s+(x.valorCuotaEditado||credito.valorCuota),0);
-                                  const totalPendiente=Math.max(0,nuevoTotal-totalCobrado);
-                                  const cuotasPagadas=nuevos.filter(x=>x.estado==="Pagada").length;
-                                  const proxPendiente=nuevos.find(x=>x.estado!=="Pagada");
-                                  const nuevoEstado=totalPendiente<=0?"Finalizado":credito.estado;
-                                  onActualizar({...credito,detalleCuotas:nuevos,saldoCobrado:totalCobrado,saldoPendiente:totalPendiente,totalCobrar:nuevoTotal,cuotasPagadas,proximoPago:proxPendiente?.fechaVenc||credito.proximoPago,estado:nuevoEstado,historial:[...credito.historial,{tipo:"pago_anticipado",cuota:i+1,descuento:"10%",montoOriginal:vc,montoPagado:montoCon10,fecha:new Date().toLocaleDateString("es-AR")}]});
-                                } else {
-                                  const confirmado20=window.confirm(`Aplicar 20% de descuento\n\nEl cliente paga: ${fmt(montoCon20)}\nDescuento aplicado: ${fmt(descuento20)}\n\n¿Confirmar?`);
-                                  if(!confirmado20)return;
-                                  const nuevos=[...detalles];
-                                  nuevos[i]={...nuevos[i],montoPagado:montoCon20,estado:"Pagada",fechaPago:new Date().toLocaleDateString("es-AR"),valorCuotaEditado:montoCon20};
-                                  const totalCobrado=nuevos.reduce((s,x)=>s+x.montoPagado,0);
-                                  const nuevoTotal=nuevos.reduce((s,x)=>s+(x.valorCuotaEditado||credito.valorCuota),0);
-                                  const totalPendiente=Math.max(0,nuevoTotal-totalCobrado);
-                                  const cuotasPagadas=nuevos.filter(x=>x.estado==="Pagada").length;
-                                  const proxPendiente=nuevos.find(x=>x.estado!=="Pagada");
-                                  const nuevoEstado=totalPendiente<=0?"Finalizado":credito.estado;
-                                  onActualizar({...credito,detalleCuotas:nuevos,saldoCobrado:totalCobrado,saldoPendiente:totalPendiente,totalCobrar:nuevoTotal,cuotasPagadas,proximoPago:proxPendiente?.fechaVenc||credito.proximoPago,estado:nuevoEstado,historial:[...credito.historial,{tipo:"pago_anticipado",cuota:i+1,descuento:"20%",montoOriginal:vc,montoPagado:montoCon20,fecha:new Date().toLocaleDateString("es-AR")}]});
-                                }
-                              }}
-                              style={{background:"none",border:"1px solid #8b5cf6",borderRadius:6,padding:"4px 7px",cursor:"pointer",color:"#8b5cf6",fontSize:10,fontWeight:700}}
-                              title="Pago anticipado con descuento">
-                              🎁 Desc.
-                            </button>
-                          </div>
+                          <button
+                            onClick={()=>{
+                              const pctInput=window.prompt(
+                                `🎁 Pago anticipado — Cuota ${d.num}\n\nValor original: ${fmt(vc)}\nCapital de esta cuota: ${fmt(capitalCuota)}\nGanancia de esta cuota: ${fmt(gananciaCuota)}\n\n¿Qué % de la GANANCIA querés descontarle al cliente?\nEj: 50 = le descontás la mitad de tu ganancia\n\n(El capital de ${fmt(capitalCuota)} siempre se cobra completo)`
+                              );
+                              if(!pctInput)return;
+                              const pctDesc=Math.min(100,Math.max(0,+pctInput||0));
+                              const descuento=Math.round(gananciaCuota*(pctDesc/100));
+                              const montoFinal=Math.round(vc-descuento);
+                              const ok=window.confirm(
+                                `Confirmar descuento\n\nValor original: ${fmt(vc)}\nDescuento (${pctDesc}% de ganancia): -${fmt(descuento)}\nEl cliente paga: ${fmt(montoFinal)}\n\n¿Confirmar pago anticipado?`
+                              );
+                              if(!ok)return;
+                              const nuevos=[...detalles];
+                              nuevos[i]={...nuevos[i],montoPagado:montoFinal,estado:"Pagada",fechaPago:new Date().toLocaleDateString("es-AR"),valorCuotaEditado:montoFinal};
+                              const totalCobrado=nuevos.reduce((s,x)=>s+x.montoPagado,0);
+                              const nuevoTotal=nuevos.reduce((s,x)=>s+(x.valorCuotaEditado||credito.valorCuota),0);
+                              const totalPendiente=Math.max(0,nuevoTotal-totalCobrado);
+                              const cuotasPagadas=nuevos.filter(x=>x.estado==="Pagada").length;
+                              const proxPendiente=nuevos.find(x=>x.estado!=="Pagada");
+                              const nuevoEstado=totalPendiente<=0?"Finalizado":credito.estado;
+                              onActualizar({...credito,detalleCuotas:nuevos,saldoCobrado:totalCobrado,saldoPendiente:totalPendiente,totalCobrar:nuevoTotal,cuotasPagadas,proximoPago:proxPendiente?.fechaVenc||credito.proximoPago,estado:nuevoEstado,
+                                historial:[...credito.historial,{tipo:"pago_anticipado",cuota:i+1,descuento:`${pctDesc}% de ganancia`,montoOriginal:vc,montoPagado:montoFinal,ahorro:descuento,fecha:new Date().toLocaleDateString("es-AR")}]});
+                            }}
+                            style={{background:"none",border:"1px solid #8b5cf6",borderRadius:6,padding:"4px 7px",cursor:"pointer",color:"#8b5cf6",fontSize:10,fontWeight:700}}
+                            title="Pago anticipado con descuento sobre la ganancia">
+                            🎁 Desc.
+                          </button>
                         );
                       })()}
                       {d.estado==="Pagada"&&<button onClick={()=>{

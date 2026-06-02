@@ -720,8 +720,59 @@ const TablaCuotas=({credito,onActualizar,t})=>{
                         const cuotasPagadas=nuevos.filter(x=>x.estado==="Pagada").length;
                         const proxPendiente=nuevos.find(x=>x.estado!=="Pagada");
                         const nuevoEstado=totalPendiente<=0?"Finalizado":credito.estado==="Moroso"?"Atrasado":credito.estado;
-                        onActualizar({...credito,detalleCuotas:nuevos,saldoCobrado:totalCobrado,saldoPendiente:totalPendiente,totalCobrar:nuevoTotal,cuotasPagadas,proximoPago:proxPendiente?.fechaVenc||credito.proximoPago,estado:nuevoEstado,historial:[...credito.historial,{tipo:"pago_completo",cuota:i+1,monto:vc,fecha:new Date().toLocaleDateString("es-AR")}]});
+                        onActualizar({...credito,detalleCuotas:nuevos,saldoCobrado:totalCobrado,saldoPendiente:totalPendiente,totalCobrar:nuevoTotal,cuotasPagadas,proximoPago:proxPendiente?.fecheVenc||credito.proximoPago,estado:nuevoEstado,historial:[...credito.historial,{tipo:"pago_completo",cuota:i+1,monto:vc,fecha:new Date().toLocaleDateString("es-AR")}]});
                       }} style={{background:"#10b981",border:"none",borderRadius:6,padding:"4px 8px",cursor:"pointer",color:"#fff",fontSize:10,fontWeight:700}} title="Marcar cuota como pagada completa">✓ Pagada</button>}
+                      {/* PAGO ANTICIPADO CON DESCUENTO */}
+                      {d.estado!=="Pagada"&&(()=>{
+                        const vc=d.valorCuotaEditado||credito.valorCuota;
+                        const gananciaCuota=credito.ganancia/credito.cuotas;
+                        const descuento10=gananciaCuota*0.10;
+                        const montoCon10=Math.round(vc-descuento10);
+                        const descuento20=gananciaCuota*0.20;
+                        const montoCon20=Math.round(vc-descuento20);
+                        // Solo mostrar si la cuota no está vencida (es futura)
+                        const esAnticipada=d.fechaVenc&&new Date(d.fechaVenc)>new Date();
+                        if(!esAnticipada)return null;
+                        return(
+                          <div style={{position:"relative",display:"inline-block"}}>
+                            <button
+                              onClick={()=>{
+                                const opcion=window.confirm(
+                                  `🎁 Pago anticipado — Cuota ${d.num}\n\nValor original: ${fmt(vc)}\nGanancia de esta cuota: ${fmt(gananciaCuota)}\n\n¿Qué descuento aplicar?\n\nOK = 10% descuento → pagá ${fmt(montoCon10)}\nCancelar = ver opción 20%`
+                                );
+                                if(opcion){
+                                  const confirmado=window.confirm(`Aplicar 10% de descuento\n\nEl cliente paga: ${fmt(montoCon10)}\nDescuento aplicado: ${fmt(descuento10)}\n\n¿Confirmar?`);
+                                  if(!confirmado)return;
+                                  const nuevos=[...detalles];
+                                  nuevos[i]={...nuevos[i],montoPagado:montoCon10,estado:"Pagada",fechaPago:new Date().toLocaleDateString("es-AR"),valorCuotaEditado:montoCon10};
+                                  const totalCobrado=nuevos.reduce((s,x)=>s+x.montoPagado,0);
+                                  const nuevoTotal=nuevos.reduce((s,x)=>s+(x.valorCuotaEditado||credito.valorCuota),0);
+                                  const totalPendiente=Math.max(0,nuevoTotal-totalCobrado);
+                                  const cuotasPagadas=nuevos.filter(x=>x.estado==="Pagada").length;
+                                  const proxPendiente=nuevos.find(x=>x.estado!=="Pagada");
+                                  const nuevoEstado=totalPendiente<=0?"Finalizado":credito.estado;
+                                  onActualizar({...credito,detalleCuotas:nuevos,saldoCobrado:totalCobrado,saldoPendiente:totalPendiente,totalCobrar:nuevoTotal,cuotasPagadas,proximoPago:proxPendiente?.fechaVenc||credito.proximoPago,estado:nuevoEstado,historial:[...credito.historial,{tipo:"pago_anticipado",cuota:i+1,descuento:"10%",montoOriginal:vc,montoPagado:montoCon10,fecha:new Date().toLocaleDateString("es-AR")}]});
+                                } else {
+                                  const confirmado20=window.confirm(`Aplicar 20% de descuento\n\nEl cliente paga: ${fmt(montoCon20)}\nDescuento aplicado: ${fmt(descuento20)}\n\n¿Confirmar?`);
+                                  if(!confirmado20)return;
+                                  const nuevos=[...detalles];
+                                  nuevos[i]={...nuevos[i],montoPagado:montoCon20,estado:"Pagada",fechaPago:new Date().toLocaleDateString("es-AR"),valorCuotaEditado:montoCon20};
+                                  const totalCobrado=nuevos.reduce((s,x)=>s+x.montoPagado,0);
+                                  const nuevoTotal=nuevos.reduce((s,x)=>s+(x.valorCuotaEditado||credito.valorCuota),0);
+                                  const totalPendiente=Math.max(0,nuevoTotal-totalCobrado);
+                                  const cuotasPagadas=nuevos.filter(x=>x.estado==="Pagada").length;
+                                  const proxPendiente=nuevos.find(x=>x.estado!=="Pagada");
+                                  const nuevoEstado=totalPendiente<=0?"Finalizado":credito.estado;
+                                  onActualizar({...credito,detalleCuotas:nuevos,saldoCobrado:totalCobrado,saldoPendiente:totalPendiente,totalCobrar:nuevoTotal,cuotasPagadas,proximoPago:proxPendiente?.fechaVenc||credito.proximoPago,estado:nuevoEstado,historial:[...credito.historial,{tipo:"pago_anticipado",cuota:i+1,descuento:"20%",montoOriginal:vc,montoPagado:montoCon20,fecha:new Date().toLocaleDateString("es-AR")}]});
+                                }
+                              }}
+                              style={{background:"none",border:"1px solid #8b5cf6",borderRadius:6,padding:"4px 7px",cursor:"pointer",color:"#8b5cf6",fontSize:10,fontWeight:700}}
+                              title="Pago anticipado con descuento">
+                              🎁 Desc.
+                            </button>
+                          </div>
+                        );
+                      })()}
                       {d.estado==="Pagada"&&<button onClick={()=>{
                         if(!confirm("¿Restablecer esta cuota a pendiente?"))return;
                         const nuevos=[...detalles];
@@ -2327,9 +2378,9 @@ const Presupuesto=({t})=>{
         <div class="seccion-titulo">💰 Detalle del ${tipo}</div>
         <div class="seccion-body" style="text-align:center">
           <div class="metrica"><div class="metrica-label">Monto solicitado</div><div class="metrica-valor">${fmt(montoN)}</div></div>
-          <div class="metrica"><div class="metrica-label">Interés (${pctN}%)</div><div class="metrica-valor" style="color:#8b5cf6">${fmt(interes)}</div></div>
+          <div class="metrica"><div class="metrica-label">Interés</div><div class="metrica-valor" style="color:#8b5cf6">${fmt(interes)}</div></div>
           <div class="metrica"><div class="metrica-label">Total a pagar</div><div class="metrica-valor" style="color:#1e40af">${fmt(totalCobrar)}</div></div>
-          <div class="metrica"><div class="metrica-label">Cuotas</div><div class="metrica-valor">${cuotasN} ${frecuencia}${cuotasN!==1?"s":""}</div></div>
+          <div class="metrica"><div class="metrica-label">Cuotas</div><div class="metrica-valor">${cuotasN} cuota${cuotasN!==1?"s":""} ${frecuencia.toLowerCase()}${cuotasN!==1?"es":""}</div></div>
           <div class="metrica"><div class="metrica-label">Valor por cuota</div><div class="metrica-valor" style="color:#10b981">${fmt(valorCuota)}</div></div>
         </div>
       </div>
@@ -2449,7 +2500,7 @@ const Presupuesto=({t})=>{
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:20}}>
                 {[
                   {label:"Monto",value:fmt(montoN),color:t.text},
-                  {label:`Interés ${pctN}%`,value:fmt(interes),color:"#8b5cf6"},
+                  {label:"Interés",value:fmt(interes),color:"#8b5cf6"},
                   {label:"Total a pagar",value:fmt(totalCobrar),color:"#1e40af"},
                   {label:"Valor cuota",value:fmt(valorCuota),color:"#10b981"},
                 ].map(({label,value,color})=>(

@@ -952,11 +952,22 @@ const PerfilCliente=({client,creditos,productos,setCreditos,onClose,onEdit,t})=>
 const usuarioFromDB=(r)=>({id:r.id,nombre:r.nombre,user:r.user_name,rol:r.rol||"empleado",activo:r.activo!==false});
 
 // ── PANEL ADMIN USUARIOS ──────────────────────────────────────────────────────
+const ROLES=[
+  {value:"empresario",label:"Empresario",desc:"Puede crear, editar y eliminar todo",color:"#10b981",bg:"#d1fae5"},
+  {value:"administrador",label:"Administrador",desc:"Solo puede ver, no edita ni elimina",color:"#3b82f6",bg:"#dbeafe"},
+  {value:"admin",label:"Admin total",desc:"Acceso completo incluyendo usuarios",color:"#8b5cf6",bg:"#ede9fe"},
+];
+
+const getRolInfo=(rol)=>ROLES.find(r=>r.value===rol)||{value:rol,label:rol,color:"#64748b",bg:"#f1f5f9"};
+
 const AdminUsuarios=({t,allClients,allCreditos,allProductos,allVentasContado})=>{
   const [usuarios,setUsuarios]=useState([]);
   const [modal,setModal]=useState(false);
+  const [editModal,setEditModal]=useState(false);
+  const [usuarioEditando,setUsuarioEditando]=useState(null);
   const [verEmpleado,setVerEmpleado]=useState(null);
-  const [form,setForm]=useState({nombre:"",user_name:"",password:"",rol:"empleado"});
+  const [form,setForm]=useState({nombre:"",user_name:"",password:"",rol:"empresario"});
+  const [formEdit,setFormEdit]=useState({nombre:"",user_name:"",password:"",rol:"empresario"});
   const [loading,setLoading]=useState(false);
 
   useEffect(()=>{
@@ -968,7 +979,23 @@ const AdminUsuarios=({t,allClients,allCreditos,allProductos,allVentasContado})=>
     setLoading(true);
     const {data}=await sb.from("usuarios").insert({nombre:form.nombre,user_name:form.user_name,password:form.password,rol:form.rol,activo:true}).select().single();
     if(data)setUsuarios(us=>[...us,usuarioFromDB(data)]);
-    setLoading(false);setModal(false);setForm({nombre:"",user_name:"",password:"",rol:"empleado"});
+    setLoading(false);setModal(false);setForm({nombre:"",user_name:"",password:"",rol:"empresario"});
+  };
+
+  const abrirEdicion=(u)=>{
+    setUsuarioEditando(u);
+    setFormEdit({nombre:u.nombre,user_name:u.user,password:"",rol:u.rol});
+    setEditModal(true);
+  };
+
+  const guardarEdicion=async()=>{
+    if(!formEdit.nombre||!formEdit.user_name)return;
+    setLoading(true);
+    const data={nombre:formEdit.nombre,user_name:formEdit.user_name,rol:formEdit.rol};
+    if(formEdit.password)data.password=formEdit.password;
+    await sb.from("usuarios").update(data).eq("id",usuarioEditando.id);
+    setUsuarios(us=>us.map(u=>u.id===usuarioEditando.id?{...u,nombre:formEdit.nombre,user:formEdit.user_name,rol:formEdit.rol}:u));
+    setLoading(false);setEditModal(false);setUsuarioEditando(null);
   };
 
   const toggleActivo=async(u)=>{
@@ -989,9 +1016,47 @@ const AdminUsuarios=({t,allClients,allCreditos,allProductos,allVentasContado})=>
     return{clientes:cls.length,activos:activos.length,ganReal,morosos,crs};
   };
 
+  const SelectorRol=({value,onChange})=>(
+    <div style={{marginBottom:14}}>
+      <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:8,textTransform:"uppercase"}}>Rol del usuario</label>
+      <div style={{display:"grid",gap:8}}>
+        {ROLES.map(r=>(
+          <div key={r.value} onClick={()=>onChange(r.value)}
+            style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:10,border:`2px solid ${value===r.value?r.color:t.border}`,background:value===r.value?r.bg:"transparent",cursor:"pointer",transition:"all 0.15s"}}>
+            <div style={{width:18,height:18,borderRadius:"50%",border:`2px solid ${r.color}`,background:value===r.value?r.color:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+              {value===r.value&&<div style={{width:8,height:8,borderRadius:"50%",background:"#fff"}}/>}
+            </div>
+            <div>
+              <div style={{fontWeight:700,color:value===r.value?r.color:t.text,fontSize:13}}>{r.label}</div>
+              <div style={{fontSize:11,color:t.sub}}>{r.desc}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
   return(
     <div>
-      {/* PANEL LATERAL EMPLEADO */}
+      {/* MODAL EDITAR USUARIO */}
+      <Modal open={editModal} onClose={()=>setEditModal(false)} title={`Editar usuario — ${usuarioEditando?.nombre}`} t={t}>
+        {usuarioEditando&&(
+          <div>
+            <Field label="Nombre completo" value={formEdit.nombre} onChange={v=>setFormEdit(f=>({...f,nombre:v}))} t={t}/>
+            <Field label="Nombre de usuario" value={formEdit.user_name} onChange={v=>setFormEdit(f=>({...f,user_name:v}))} t={t}/>
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:4,textTransform:"uppercase"}}>Nueva contraseña (dejá vacío para no cambiar)</label>
+              <input type="password" value={formEdit.password} onChange={e=>setFormEdit(f=>({...f,password:e.target.value}))} placeholder="Nueva contraseña..."
+                style={{width:"100%",padding:"9px 12px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+            <SelectorRol value={formEdit.rol} onChange={v=>setFormEdit(f=>({...f,rol:v}))}/>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
+              <button onClick={()=>setEditModal(false)} style={{padding:"9px 18px",borderRadius:8,border:`1px solid ${t.border}`,background:"none",color:t.sub,cursor:"pointer",fontWeight:600}}>Cancelar</button>
+              <button onClick={guardarEdicion} disabled={loading} style={{padding:"9px 18px",borderRadius:8,border:"none",background:t.accent,color:"#fff",cursor:"pointer",fontWeight:700,opacity:loading?0.7:1}}>{loading?"Guardando...":"Guardar cambios"}</button>
+            </div>
+          </div>
+        )}
+      </Modal>
       {verEmpleado&&(
         <div style={{position:"fixed",inset:0,zIndex:500,display:"flex",alignItems:"stretch"}}>
           <div onClick={()=>setVerEmpleado(null)} style={{flex:1,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(3px)",cursor:"pointer"}}/>
@@ -1047,17 +1112,24 @@ const AdminUsuarios=({t,allClients,allCreditos,allProductos,allVentasContado})=>
           <tbody>
             {usuarios.map(u=>{
               const m=getMetricas(u.id);
+              const rolInfo=getRolInfo(u.rol);
               return(
                 <tr key={u.id} style={{borderTop:`1px solid ${t.border}`}}>
                   <td style={{padding:"12px 15px",fontWeight:600,color:t.text}}>{u.nombre}</td>
                   <td style={{padding:"12px 15px",color:t.sub,fontSize:13}}>@{u.user}</td>
-                  <td style={{padding:"12px 15px"}}><span style={{background:u.rol==="admin"?"#ede9fe":"#dbeafe",color:u.rol==="admin"?"#4c1d95":"#1e40af",padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:600}}>{u.rol}</span></td>
+                  <td style={{padding:"12px 15px"}}>
+                    <div>
+                      <span style={{background:rolInfo.bg,color:rolInfo.color,padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:700}}>{rolInfo.label}</span>
+                      <div style={{fontSize:10,color:t.sub,marginTop:3}}>{rolInfo.desc}</div>
+                    </div>
+                  </td>
                   <td style={{padding:"12px 15px"}}><span style={{background:u.activo?"#d1fae5":"#fee2e2",color:u.activo?"#065f46":"#991b1b",padding:"2px 10px",borderRadius:20,fontSize:12,fontWeight:600}}>{u.activo?"Activo":"Inactivo"}</span></td>
                   <td style={{padding:"12px 15px",fontSize:12,color:t.sub}}><span style={{color:"#3b82f6",fontWeight:600}}>{m.clientes} clientes</span> · <span style={{color:"#8b5cf6",fontWeight:600}}>{fmt(m.ganReal)}</span></td>
                   <td style={{padding:"12px 15px"}}>
                     <div style={{display:"flex",gap:6}}>
                       <button onClick={()=>setVerEmpleado(u)} style={{background:"none",border:`1px solid ${t.accent}`,borderRadius:6,padding:"5px 10px",cursor:"pointer",color:t.accent,fontSize:11,fontWeight:700}}>Ver datos</button>
-                      <button onClick={()=>toggleActivo(u)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"5px 10px",cursor:"pointer",color:t.sub,fontSize:11,fontWeight:600}}>{u.activo?"Desactivar":"Activar"}</button>
+                      <button onClick={()=>abrirEdicion(u)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"5px 8px",cursor:"pointer",color:t.sub}} title="Editar usuario"><Icon name="edit" size={13}/></button>
+                      <button onClick={()=>toggleActivo(u)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"5px 10px",cursor:"pointer",color:t.sub,fontSize:11,fontWeight:600}}>{u.activo?"Pausar":"Activar"}</button>
                       <button onClick={()=>del(u.id)} style={{background:"none",border:"1px solid #fca5a5",borderRadius:6,padding:"5px 8px",cursor:"pointer",color:"#ef4444"}}><Icon name="trash" size={13}/></button>
                     </div>
                   </td>
@@ -1072,7 +1144,7 @@ const AdminUsuarios=({t,allClients,allCreditos,allProductos,allVentasContado})=>
         <Field label="Nombre completo *" value={form.nombre} onChange={v=>setForm(f=>({...f,nombre:v}))} t={t}/>
         <Field label="Nombre de usuario *" value={form.user_name} onChange={v=>setForm(f=>({...f,user_name:v}))} t={t} placeholder="Ej: maria123"/>
         <Field label="Contraseña *" value={form.password} onChange={v=>setForm(f=>({...f,password:v}))} t={t}/>
-        <Field label="Rol" value={form.rol} onChange={v=>setForm(f=>({...f,rol:v}))} options={["empleado","admin"]} t={t}/>
+        <SelectorRol value={form.rol} onChange={v=>setForm(f=>({...f,rol:v}))}/>
         <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
           <button onClick={()=>setModal(false)} style={{padding:"9px 18px",borderRadius:8,border:`1px solid ${t.border}`,background:"none",color:t.sub,cursor:"pointer",fontWeight:600}}>Cancelar</button>
           <button onClick={save} disabled={loading} style={{padding:"9px 18px",borderRadius:8,border:"none",background:t.accent,color:"#fff",cursor:"pointer",fontWeight:700,opacity:loading?0.7:1}}>{loading?"Guardando...":"Crear usuario"}</button>
@@ -1561,7 +1633,7 @@ const Dashboard=({clients,creditos,setCreditos,productos,ventasContado=[],t})=>{
   );
 };
 
-const Clientes=({clients,setClients,creditos,setCreditos,productos,usuarioActual,t})=>{
+const Clientes=({clients,setClients,creditos,setCreditos,productos,usuarioActual,soloVer=false,t})=>{
   const [search,setSearch]=useState("");
   const [filtro,setFiltro]=useState("Todos");
   const [modal,setModal]=useState(false);
@@ -1648,7 +1720,8 @@ Si no encontrás algún dato dejalo vacío. El DNI son solo los números sin pun
       )}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
         <div><h1 style={{fontSize:22,fontWeight:800,color:t.text,margin:"0 0 2px"}}>Clientes</h1><p style={{color:t.sub,margin:0,fontSize:13}}>{clients.length} registrados</p></div>
-        <button onClick={()=>{setSel(null);setForm(EF);setModal(true);}} style={{background:t.accent,color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Icon name="plus" size={15}/>Nuevo cliente</button>
+        {!soloVer&&<button onClick={()=>{setSel(null);setForm(EF);setModal(true);}} style={{background:t.accent,color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Icon name="plus" size={15}/>Nuevo cliente</button>}
+        {soloVer&&<span style={{background:"#fef3c7",color:"#92400e",padding:"6px 14px",borderRadius:8,fontSize:12,fontWeight:600}}>👁 Solo lectura</span>}
       </div>
       <div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:200,position:"relative"}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por nombre, apellido o DNI..." style={{width:"100%",padding:"10px 14px 10px 40px",borderRadius:10,border:`1px solid ${t.border}`,background:t.card,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/><span style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",color:t.sub}}><Icon name="search" size={16}/></span></div>
@@ -1673,7 +1746,12 @@ Si no encontrás algún dato dejalo vacío. El DNI son solo los números sin pun
                 <td style={{padding:"12px 15px",color:t.sub,fontSize:13}}>{c.ciudad}</td>
                 <td style={{padding:"12px 15px"}}><div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:50,height:6,borderRadius:3,background:t.border,overflow:"hidden"}}><div style={{width:`${c.score||75}%`,height:"100%",background:c.score>70?"#10b981":c.score>40?"#f59e0b":"#ef4444",borderRadius:3}}/></div><span style={{fontSize:12,fontWeight:700,color:t.text}}>{c.score||75}</span></div></td>
                 <td style={{padding:"12px 15px"}}><Badge status={c.estado}/></td>
-                <td style={{padding:"12px 15px"}}><div style={{display:"flex",gap:6}}><button onClick={e=>openEdit(c,e)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"5px 8px",cursor:"pointer",color:t.sub}}><Icon name="edit" size={14}/></button><button onClick={e=>{e.stopPropagation();generatePDFCliente(c,creditos,productos);}} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"5px 8px",cursor:"pointer",color:"#3b82f6"}} title="Exportar PDF del cliente"><Icon name="pdf" size={14}/></button><button onClick={e=>del(c.id,e)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"5px 8px",cursor:"pointer",color:"#ef4444"}}><Icon name="trash" size={14}/></button></div></td>
+                <td style={{padding:"12px 15px"}}><div style={{display:"flex",gap:6}}>
+                    {!soloVer&&<button onClick={e=>openEdit(c,e)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"5px 8px",cursor:"pointer",color:t.sub}}><Icon name="edit" size={14}/></button>}
+                    {!soloVer&&<button onClick={e=>{e.stopPropagation();generatePDFCliente(c,creditos,productos);}} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"5px 8px",cursor:"pointer",color:"#3b82f6"}} title="Exportar PDF del cliente"><Icon name="pdf" size={14}/></button>}
+                    {soloVer&&<button onClick={e=>{e.stopPropagation();generatePDFCliente(c,creditos,productos);}} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"5px 8px",cursor:"pointer",color:"#3b82f6"}}><Icon name="pdf" size={14}/></button>}
+                    {!soloVer&&<button onClick={e=>del(c.id,e)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:6,padding:"5px 8px",cursor:"pointer",color:"#ef4444"}}><Icon name="trash" size={14}/></button>}
+                  </div></td>
               </tr>
             ))}</tbody>
           </table>
@@ -1728,7 +1806,7 @@ Si no encontrás algún dato dejalo vacío. El DNI son solo los números sin pun
 };
 
 // ── CRÉDITOS ──────────────────────────────────────────────────────────────────
-const Creditos=({creditos,setCreditos,clients,usuarioActual,t})=>{
+const Creditos=({creditos,setCreditos,clients,usuarioActual,soloVer=false,t})=>{
   const [search,setSearch]=useState("");
   const [filtroEst,setFiltroEst]=useState("Todos");
   const [modal,setModal]=useState(false);
@@ -1821,7 +1899,8 @@ const Creditos=({creditos,setCreditos,clients,usuarioActual,t})=>{
         <div><h1 style={{fontSize:22,fontWeight:800,color:t.text,margin:"0 0 2px"}}>Créditos & Préstamos</h1><p style={{color:t.sub,margin:0,fontSize:13}}>{creditos.filter(c=>c.estado!=="Finalizado").length} activos · {creditos.length} totales</p></div>
         <div style={{display:"flex",gap:8}}>
           <button onClick={()=>exportarExcelCreditos(creditos,clients)} style={{background:"#10b981",color:"#fff",border:"none",borderRadius:10,padding:"10px 16px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>📊 Exportar Excel</button>
-          <button onClick={()=>{setForm(EF);setModal(true);}} style={{background:t.accent,color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Icon name="plus" size={15}/>Nuevo crédito</button>
+          {!soloVer&&<button onClick={()=>{setForm(EF);setModal(true);}} style={{background:t.accent,color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Icon name="plus" size={15}/>Nuevo crédito</button>}
+          {soloVer&&<span style={{background:"#fef3c7",color:"#92400e",padding:"6px 14px",borderRadius:8,fontSize:12,fontWeight:600,display:"flex",alignItems:"center"}}>👁 Solo lectura</span>}
         </div>
       </div>
       <div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap"}}>
@@ -1853,14 +1932,10 @@ const Creditos=({creditos,setCreditos,clients,usuarioActual,t})=>{
                     </div>
                     <div style={{display:"flex",gap:7,flexWrap:"wrap",alignItems:"center"}}>
                       <button onClick={()=>setExpandido(exp?null:c.id)} style={{background:exp?t.accent:"none",border:`1px solid ${t.accent}`,color:exp?"#fff":t.accent,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><Icon name="calendar" size={13}/>{exp?"Ocultar":"Ver cuotas"}</button>
-                      <button onClick={()=>abrirEdicion(c)} style={{background:"none",border:`1px solid ${t.border}`,color:t.sub,borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:3}} title="Editar crédito"><Icon name="edit" size={13}/></button>
+                      {!soloVer&&<button onClick={()=>abrirEdicion(c)} style={{background:"none",border:`1px solid ${t.border}`,color:t.sub,borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:3}} title="Editar crédito"><Icon name="edit" size={13}/></button>}
                       <button onClick={()=>generatePDF(c)} style={{background:"none",border:`1px solid ${t.border}`,color:t.sub,borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}><Icon name="pdf" size={13}/></button>
-                      <UploadBtn label={c.pagareUrl?"📄 Pagaré ✓":"📄 Pagaré"} url={c.pagareUrl} accept="image/*,.pdf" color={c.pagareUrl?"#10b981":"#f59e0b"} t={t}
-                        onUpload={async(url)=>{
-                          await sb.from("creditos").update({pagare_url:url}).eq("id",c.id);
-                          setCreditos(cs=>cs.map(x=>x.id===c.id?{...x,pagareUrl:url}:x));
-                        }}/>
-                      <button onClick={()=>eliminar(c.id)} style={{background:"none",border:"1px solid #fca5a5",color:"#ef4444",borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center"}}><Icon name="trash" size={13}/></button>
+                      {!soloVer&&<UploadBtn label={c.pagareUrl?"📄 Pagaré ✓":"📄 Pagaré"} url={c.pagareUrl} accept="image/*,.pdf" color={c.pagareUrl?"#10b981":"#f59e0b"} t={t} onUpload={async(url)=>{await sb.from("creditos").update({pagare_url:url}).eq("id",c.id);setCreditos(cs=>cs.map(x=>x.id===c.id?{...x,pagareUrl:url}:x));}}/>}
+                      {!soloVer&&<button onClick={()=>eliminar(c.id)} style={{background:"none",border:"1px solid #fca5a5",color:"#ef4444",borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center"}}><Icon name="trash" size={13}/></button>}
                     </div>
                   </div>
                   <div style={{marginTop:14}}>
@@ -1946,7 +2021,7 @@ const Creditos=({creditos,setCreditos,clients,usuarioActual,t})=>{
     </div>
   );
 };
-const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,usuarioActual,t})=>{
+const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,usuarioActual,soloVer=false,t})=>{
   const [modal,setModal]=useState(false);
   const [modalContado,setModalContado]=useState(false);
   const [editModal,setEditModal]=useState(false);
@@ -2630,6 +2705,8 @@ export default function App(){
   const t=dark?DARK:LIGHT;
 
   const esAdmin=usuarioActual?.rol==="admin"||usuarioActual?.user==="andres";
+  const esEmpresario=usuarioActual?.rol==="empresario"||esAdmin;
+  const soloVer=usuarioActual?.rol==="administrador"; // Solo puede ver, no editar
   // Todos ven solo sus propios datos — admin NO ve todo automáticamente
   const uid=usuarioActual?.id||0;
   const clients=allClients.filter(c=>c.usuarioId===uid);
@@ -2722,9 +2799,9 @@ export default function App(){
         {/* Contenido móvil */}
         <main style={{flex:1,padding:"14px 14px 80px",overflowY:"auto"}}>
           {screen==="dashboard"&&<Dashboard clients={clients} creditos={creditos} setCreditos={setCreditos} productos={productos} ventasContado={ventasContado} t={t}/>}
-          {screen==="clientes"&&<Clientes clients={clients} setClients={setClients} creditos={creditos} setCreditos={setCreditos} productos={productos} usuarioActual={usuarioActual} t={t}/>}
-          {screen==="creditos"&&<Creditos creditos={creditos} setCreditos={setCreditos} clients={clients} usuarioActual={usuarioActual} t={t}/>}
-          {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} usuarioActual={usuarioActual} t={t}/>}
+          {screen==="clientes"&&<Clientes clients={clients} setClients={setClients} creditos={creditos} setCreditos={setCreditos} productos={productos} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
+          {screen==="creditos"&&<Creditos creditos={creditos} setCreditos={setCreditos} clients={clients} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
+          {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
           {screen==="cartera"&&<Cartera creditos={creditos} productos={productos} clients={clients} t={t}/>}
           {screen==="alertas"&&<Alertas creditos={creditos} clients={clients} t={t}/>}
           {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t} allClients={allClients} allCreditos={allCreditos} allProductos={allProductos} allVentasContado={allVentasContado}/>}
@@ -2812,9 +2889,9 @@ export default function App(){
         </header>
         <main style={{flex:1,padding:"26px",overflowY:"auto"}}>
           {screen==="dashboard"&&<Dashboard clients={clients} creditos={creditos} setCreditos={setCreditos} productos={productos} ventasContado={ventasContado} t={t}/>}
-          {screen==="clientes"&&<Clientes clients={clients} setClients={setClients} creditos={creditos} setCreditos={setCreditos} productos={productos} usuarioActual={usuarioActual} t={t}/>}
-          {screen==="creditos"&&<Creditos creditos={creditos} setCreditos={setCreditos} clients={clients} usuarioActual={usuarioActual} t={t}/>}
-          {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} usuarioActual={usuarioActual} t={t}/>}
+          {screen==="clientes"&&<Clientes clients={clients} setClients={setClients} creditos={creditos} setCreditos={setCreditos} productos={productos} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
+          {screen==="creditos"&&<Creditos creditos={creditos} setCreditos={setCreditos} clients={clients} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
+          {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
           {screen==="cartera"&&<Cartera creditos={creditos} productos={productos} clients={clients} t={t}/>}
           {screen==="alertas"&&<Alertas creditos={creditos} clients={clients} t={t}/>}
           {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t} allClients={allClients} allCreditos={allCreditos} allProductos={allProductos} allVentasContado={allVentasContado}/>}

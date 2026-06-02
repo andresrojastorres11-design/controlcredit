@@ -2462,8 +2462,6 @@ const Presupuesto=({t})=>{
         <div class="seccion-titulo">💰 Detalle del ${tipo}</div>
         <div class="seccion-body" style="text-align:center">
           <div class="metrica"><div class="metrica-label">Monto solicitado</div><div class="metrica-valor">${fmt(montoN)}</div></div>
-          <div class="metrica"><div class="metrica-label">Interés</div><div class="metrica-valor" style="color:#8b5cf6">${fmt(interes)}</div></div>
-          <div class="metrica"><div class="metrica-label">Total a pagar</div><div class="metrica-valor" style="color:#1e40af">${fmt(totalCobrar)}</div></div>
           <div class="metrica"><div class="metrica-label">Cuotas</div><div class="metrica-valor">${cuotasN} cuota${cuotasN!==1?"s":""} ${frecuencia.toLowerCase()}${cuotasN!==1?"es":""}</div></div>
           <div class="metrica"><div class="metrica-label">Valor por cuota</div><div class="metrica-valor" style="color:#10b981">${fmt(valorCuota)}</div></div>
         </div>
@@ -2475,7 +2473,6 @@ const Presupuesto=({t})=>{
           <table>
             <thead><tr style="background:#f8fafc"><th style="text-align:center;padding:10px">Cuota #</th><th style="text-align:center;padding:10px">Fecha de pago</th><th style="text-align:center;padding:10px">Monto</th></tr></thead>
             <tbody>${filas}</tbody>
-            <tfoot><tr style="background:#1e3a8a;color:#fff"><td style="text-align:center;padding:10px;font-weight:700" colspan="2">TOTAL</td><td style="text-align:center;padding:10px;font-weight:900">${fmt(totalCobrar)}</td></tr></tfoot>
           </table>
         </div>
       </div>
@@ -2584,8 +2581,7 @@ const Presupuesto=({t})=>{
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:20}}>
                 {[
                   {label:"Monto",value:fmt(montoN),color:t.text},
-                  {label:"Interés",value:fmt(interes),color:"#8b5cf6"},
-                  {label:"Total a pagar",value:fmt(totalCobrar),color:"#1e40af"},
+                  
                   {label:"Valor cuota",value:fmt(valorCuota),color:"#10b981"},
                 ].map(({label,value,color})=>(
                   <div key={label} style={{background:t.bg,borderRadius:10,padding:"12px 14px",border:`1px solid ${t.border}`}}>
@@ -2610,10 +2606,7 @@ const Presupuesto=({t})=>{
                         <td style={{padding:"10px 12px",textAlign:"center",fontWeight:800,color:"#10b981",fontSize:14}}>{fmt(c.valor)}</td>
                       </tr>
                     ))}
-                    <tr style={{background:`${t.accent}10`,borderTop:`2px solid ${t.accent}`}}>
-                      <td colSpan={2} style={{padding:"10px 12px",textAlign:"center",fontWeight:700,color:t.text}}>TOTAL</td>
-                      <td style={{padding:"10px 12px",textAlign:"center",fontWeight:900,color:"#1e40af",fontSize:15}}>{fmt(totalCobrar)}</td>
-                    </tr>
+
                   </tbody>
                 </table>
               </div>

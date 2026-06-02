@@ -24,7 +24,7 @@ const crearDetalleCuotas=(fechaOtorg,frecuencia,cantCuotas,valorCuota)=>{const f
 // Helpers para convertir entre snake_case (Supabase) y camelCase (App)
 const clientFromDB=(r)=>({id:r.id,nombre:r.nombre,apellido:r.apellido,dni:r.dni||"",email:r.email||"",tel:r.tel||"",ciudad:r.ciudad||"",provincia:r.provincia||"",estado:r.estado||"Al día",score:r.score||75,sueldo:r.sueldo||"",ocupacion:r.ocupacion||"",empresa:r.empresa||"",estadoCivil:r.estado_civil||"",nacimiento:r.nacimiento||"",notas:r.notas||"",usuarioId:r.usuario_id||0,dniFrenteUrl:r.dni_frente||"",dniDorsoUrl:r.dni_dorso||""});
 const creditoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,monto:r.monto,totalCobrar:r.total_cobrar,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,valorCuota:r.valor_cuota,saldoCobrado:r.saldo_cobrado||0,saldoPendiente:r.saldo_pendiente,frecuencia:r.frecuencia,fechaOtorg:r.fecha_otorg,proximoPago:r.proximo_pago,estado:r.estado,comentarios:r.comentarios||"",historial:r.historial||[],detalleCuotas:r.detalle_cuotas||[],usuarioId:r.usuario_id||0,pagareUrl:r.pagare_url||""});
-const productoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,producto:r.producto,inversion:r.inversion,precioFinanciado:r.precio_financiado,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,saldoCobrado:r.saldo_cobrado||0,saldoPendiente:r.saldo_pendiente||r.precio_financiado||0,valorCuota:r.valor_cuota||Math.round((r.precio_financiado||0)/(r.cuotas||1)),estado:r.estado,frecuencia:r.frecuencia,usuarioId:r.usuario_id||0,detalleCuotas:r.detalle_cuotas||[],fechaOtorg:r.fecha_otorg||"",proximoPago:r.proximo_pago||""});
+const productoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,producto:r.producto,inversion:r.inversion,precioFinanciado:r.precio_financiado,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,saldoCobrado:r.saldo_cobrado||0,saldoPendiente:r.saldo_pendiente||r.precio_financiado||0,valorCuota:r.valor_cuota||Math.round((r.precio_financiado||0)/(r.cuotas||1)),estado:r.estado,frecuencia:r.frecuencia,usuarioId:r.usuario_id||0,detalleCuotas:r.detalle_cuotas||[],fechaOtorg:r.fecha_otorg||"",proximoPago:r.proximo_pago||"",entrega:r.entrega||0});
 
 // ── PDF ENGINE ────────────────────────────────────────────────────────────────
 const abrirPDF=(html,nombre)=>{
@@ -58,6 +58,7 @@ const generatePDF=(credito)=>{
       <div class="seccion-titulo">Resumen financiero</div>
       <div class="seccion-body" style="text-align:center">
         <div class="metrica"><div class="metrica-label">Valor de cuota</div><div class="metrica-valor">${fmt(credito.valorCuota)}</div></div>
+        ${credito.entrega>0?`<div class="metrica"><div class="metrica-label" style="color:#10b981">✓ Entrega / Adelanto</div><div class="metrica-valor" style="color:#10b981">${fmt(credito.entrega)}</div></div>`:""}
         <div class="metrica"><div class="metrica-label">Ya abonado</div><div class="metrica-valor" style="color:#10b981">${fmt(credito.saldoCobrado)}</div></div>
         <div class="metrica"><div class="metrica-label">Saldo pendiente</div><div class="metrica-valor" style="color:#ef4444">${fmt(credito.saldoPendiente)}</div></div>
         <div class="metrica"><div class="metrica-label">Cuotas pagadas</div><div class="metrica-valor">${credito.cuotasPagadas}/${credito.cuotas}</div></div>
@@ -1709,7 +1710,7 @@ Si no encontrás algún dato dejalo vacío. El DNI son solo los números sin pun
   };
 
   const save=async()=>{
-    if(!form.nombre||!form.dni)return;
+    if(!form.nombre)return;
     setLoading(true);
     const data={nombre:form.nombre,apellido:form.apellido,dni:form.dni,email:form.email,tel:form.tel,ciudad:form.ciudad,provincia:form.provincia,estado:form.estado,score:+form.score||75,sueldo:+form.sueldo||null,ocupacion:form.ocupacion,empresa:form.empresa,estado_civil:form.estadoCivil,nacimiento:form.nacimiento,notas:form.notas,usuario_id:usuarioActual?.id||0};
     if(sel){
@@ -1804,7 +1805,7 @@ Si no encontrás algún dato dejalo vacío. El DNI son solo los números sin pun
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
           <Field label="Nombre *" value={form.nombre} onChange={v=>setForm(f=>({...f,nombre:v}))} t={t}/>
           <Field label="Apellido *" value={form.apellido} onChange={v=>setForm(f=>({...f,apellido:v}))} t={t}/>
-          <Field label="DNI *" value={form.dni} onChange={v=>setForm(f=>({...f,dni:v}))} t={t}/>
+          <Field label="DNI (opcional)" value={form.dni} onChange={v=>setForm(f=>({...f,dni:v}))} t={t}/>
           <Field label="Teléfono (sin 0 ni 15)" value={form.tel} onChange={v=>setForm(f=>({...f,tel:v}))} placeholder="Ej: 3511234567" t={t}/>
           <Field label="Email" value={form.email} onChange={v=>setForm(f=>({...f,email:v}))} type="email" t={t}/>
           <Field label="Nacimiento" value={form.nacimiento} onChange={v=>setForm(f=>({...f,nacimiento:v}))} type="date" t={t}/>
@@ -2051,7 +2052,7 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
   const [tabActiva,setTabActiva]=useState("financiado");
   const [expandido,setExpandido]=useState(null);
   const [loading,setLoading]=useState(false);
-  const EF={clienteId:"",producto:"",inversion:"",precioFinanciado:"",cuotas:"",frecuencia:"Mensual",estado:"Activo",fechaOtorg:new Date().toISOString().slice(0,10)};
+  const EF={clienteId:"",producto:"",inversion:"",precioFinanciado:"",cuotas:"",frecuencia:"Mensual",estado:"Activo",fechaOtorg:new Date().toISOString().slice(0,10),entrega:""};
   const [form,setForm]=useState(EF);
   const EFC={producto:"",clienteNombre:"",costo:"",precioVenta:"",fecha:new Date().toISOString().slice(0,10),notas:""};
   const [formC,setFormC]=useState(EFC);
@@ -2078,7 +2079,7 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
     setLoading(true);
     const vc=Math.round(+form.precioFinanciado/+form.cuotas);
     const det=crearDetalleCuotas(form.fechaOtorg,form.frecuencia,+form.cuotas,vc);
-    const data={cliente_id:+form.clienteId,cliente_nombre:`${client.nombre} ${client.apellido}`,producto:form.producto,inversion:+form.inversion,precio_financiado:+form.precioFinanciado,ganancia:+form.precioFinanciado-+form.inversion,cuotas:+form.cuotas,cuotas_pagadas:0,saldo_cobrado:0,valor_cuota:vc,estado:form.estado,frecuencia:form.frecuencia,usuario_id:usuarioActual?.id||0,detalle_cuotas:det,fecha_otorg:form.fechaOtorg,proximo_pago:det[0]?.fechaVenc||""};
+    const entregaN=+form.entrega||0;const precioRestante=Math.max(0,+form.precioFinanciado-entregaN);const vcConEntrega=Math.round(precioRestante/+form.cuotas);const detConEntrega=crearDetalleCuotas(form.fechaOtorg,form.frecuencia,+form.cuotas,vcConEntrega);const data={cliente_id:+form.clienteId,cliente_nombre:`${client.nombre} ${client.apellido}`,producto:form.producto,inversion:+form.inversion,precio_financiado:+form.precioFinanciado,ganancia:+form.precioFinanciado-+form.inversion,cuotas:+form.cuotas,cuotas_pagadas:0,saldo_cobrado:entregaN,saldo_pendiente:precioRestante,valor_cuota:vcConEntrega,estado:form.estado,frecuencia:form.frecuencia,usuario_id:usuarioActual?.id||0,detalle_cuotas:detConEntrega,fecha_otorg:form.fechaOtorg,proximo_pago:detConEntrega[0]?.fechaVenc||"",entrega:entregaN};
     const {data:created}=await sb.from("productos").insert(data).select().single();
     if(created)setProductos(ps=>[...ps,productoFromDB(created)]);
     setLoading(false);setModal(false);setForm(EF);
@@ -2256,12 +2257,16 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
           <Field label="Cuotas *" value={form.cuotas} onChange={v=>setForm(f=>({...f,cuotas:v}))} type="number" t={t}/>
           <Field label="Frecuencia" value={form.frecuencia} onChange={v=>setForm(f=>({...f,frecuencia:v}))} options={FRECUENCIAS} t={t}/>
           <Field label="Fecha otorgamiento" value={form.fechaOtorg} onChange={v=>setForm(f=>({...f,fechaOtorg:v}))} type="date" t={t}/>
+          <Field label="Entrega / Adelanto ($)" value={form.entrega} onChange={v=>setForm(f=>({...f,entrega:v}))} type="number" t={t} placeholder="0 si no hay adelanto"/>
           <Field label="Estado" value={form.estado} onChange={v=>setForm(f=>({...f,estado:v}))} options={["Activo","Atrasado","Moroso"]} t={t}/>
         </div>
         {form.inversion&&form.precioFinanciado&&form.cuotas&&<div style={{background:t.bg,borderRadius:10,padding:"12px 16px",marginBottom:14,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-          <div style={{textAlign:"center"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:700,marginBottom:2}}>Cuota</div><div style={{fontSize:16,fontWeight:800,color:t.accent}}>{fmt(vcForm)}</div></div>
+          <div style={{textAlign:"center"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:700,marginBottom:2}}>Cuota</div><div style={{fontSize:16,fontWeight:800,color:t.accent}}>{fmt(Math.round((+form.precioFinanciado-(+form.entrega||0))/+form.cuotas))}</div></div>
           <div style={{textAlign:"center"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:700,marginBottom:2}}>Ganancia</div><div style={{fontSize:16,fontWeight:800,color:t.accent2}}>{fmt(+form.precioFinanciado-+form.inversion)}</div></div>
           <div style={{textAlign:"center"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:700,marginBottom:2}}>Rentab.</div><div style={{fontSize:16,fontWeight:800,color:"#8b5cf6"}}>{Math.round(((+form.precioFinanciado-+form.inversion)/(+form.inversion||1))*100)}%</div></div>
+          {+form.entrega>0&&<div style={{gridColumn:"1/-1",textAlign:"center",background:"#10b98115",borderRadius:8,padding:"8px",fontSize:12,color:"#10b981",fontWeight:600}}>
+            ✓ Entrega de {fmt(+form.entrega)} · Saldo a financiar: {fmt(Math.max(0,+form.precioFinanciado-+form.entrega))}
+          </div>}
         </div>}
         <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
           <button onClick={()=>setModal(false)} style={{padding:"9px 18px",borderRadius:8,border:`1px solid ${t.border}`,background:"none",color:t.sub,cursor:"pointer",fontWeight:600}}>Cancelar</button>

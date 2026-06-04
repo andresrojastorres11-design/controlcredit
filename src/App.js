@@ -18,7 +18,24 @@ const EVOL=[{mes:"Ene",cobros:0,mora:0,prestamos:0},{mes:"Feb",cobros:0,mora:0,p
 const FRECUENCIAS=["Semanal","Quincenal","Mensual"];
 const fmt=(n)=>new Intl.NumberFormat("es-AR",{style:"currency",currency:"ARS",maximumFractionDigits:0}).format(n||0);
 const fmtFecha=(iso)=>{if(!iso)return"—";const[y,m,d]=iso.split("-");return`${d}/${m}/${y}`;};
-const generarFechasCuotas=(fechaOtorg,frecuencia,cantCuotas)=>{if(!fechaOtorg||!cantCuotas)return[];const dias=frecuencia==="Semanal"?7:frecuencia==="Quincenal"?14:30;return Array.from({length:cantCuotas},(_,i)=>{const d=new Date(fechaOtorg);d.setDate(d.getDate()+dias*(i+1));return d.toISOString().slice(0,10);});};
+const generarFechasCuotas=(fechaOtorg,frecuencia,cantCuotas)=>{
+  if(!fechaOtorg||!cantCuotas)return[];
+  return Array.from({length:cantCuotas},(_,i)=>{
+    const d=new Date(fechaOtorg);
+    if(frecuencia==="Mensual"){
+      // Mismo día del mes siguiente — respeta el día exacto
+      const diaOrigen=d.getDate();
+      d.setMonth(d.getMonth()+(i+1));
+      // Si el mes no tiene ese día (ej: 31 en febrero) usa el último día del mes
+      const ultimoDia=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();
+      d.setDate(Math.min(diaOrigen,ultimoDia));
+    } else {
+      const dias=frecuencia==="Semanal"?7:14;
+      d.setDate(d.getDate()+dias*(i+1));
+    }
+    return d.toISOString().slice(0,10);
+  });
+};
 const crearDetalleCuotas=(fechaOtorg,frecuencia,cantCuotas,valorCuota)=>{const fechas=generarFechasCuotas(fechaOtorg,frecuencia,cantCuotas);return fechas.map((fecha,i)=>({num:i+1,fechaVenc:fecha,montoPagado:0,estado:"Pendiente",fechaPago:null}));};
 
 // Helpers para convertir entre snake_case (Supabase) y camelCase (App)
@@ -38,9 +55,19 @@ const abrirPDF=(html,nombre)=>{
 const generatePDF=(credito)=>{
   const fecha=new Date().toLocaleDateString("es-AR");
   const filas=(credito.detalleCuotas||[]).map(d=>{
-    const saldoCuota=Math.max(0,(credito.valorCuota||0)-d.montoPagado);
+    const vc=d.valorCuotaEditado||credito.valorCuota||0;
+    const saldoCuota=Math.max(0,vc-d.montoPagado);
     const badgeClass=d.estado==="Pagada"?"badge-verde":d.estado==="Parcial"?"badge-amarillo":"badge-rojo";
-    return`<tr><td style="font-weight:700">${d.num}</td><td>${fmtFecha(d.fechaVenc)}</td><td>${fmt(credito.valorCuota)}</td><td style="color:#10b981;font-weight:600">${fmt(d.montoPagado)}</td><td style="color:#ef4444;font-weight:600">${fmt(saldoCuota)}</td><td><span class="badge ${badgeClass}">${d.estado}</span></td></tr>`;
+    const fechaPagoCol=d.fechaPago?`<span style="color:#10b981;font-size:10px">✓ ${d.fechaPago}</span>`:`<span style="color:#94a3b8;font-size:10px">—</span>`;
+    return`<tr>
+      <td style="font-weight:700">${d.num}</td>
+      <td>${fmtFecha(d.fechaVenc)}</td>
+      <td>${fechaPagoCol}</td>
+      <td>${fmt(vc)}${d.valorCuotaEditado&&d.valorCuotaEditado!==credito.valorCuota?'<span style="font-size:9px;color:#f59e0b;margin-left:3px">+mora</span>':''}</td>
+      <td style="color:#10b981;font-weight:600">${fmt(d.montoPagado)}</td>
+      <td style="color:#ef4444;font-weight:600">${fmt(saldoCuota)}</td>
+      <td><span class="badge ${badgeClass}">${d.estado}</span></td>
+    </tr>`;
   }).join("");
   const pct=Math.round((credito.cuotasPagadas/credito.cuotas)*100);
   const html=`
@@ -65,7 +92,7 @@ const generatePDF=(credito)=>{
         <div class="metrica"><div class="metrica-label">Progreso</div><div class="metrica-valor">${pct}%</div></div>
       </div>
     </div>
-    ${filas?`<div class="seccion"><div class="seccion-titulo">Detalle de cuotas</div><div class="seccion-body"><table><tr><th>#</th><th>Vencimiento</th><th>Valor cuota</th><th>Pagado</th><th>Saldo</th><th>Estado</th></tr>${filas}</table></div></div>`:""}
+    ${filas?`<div class="seccion"><div class="seccion-titulo">Detalle de cuotas</div><div class="seccion-body"><table><tr><th>#</th><th>Vencimiento</th><th>Fecha pago</th><th>Valor</th><th>Pagado</th><th>Saldo</th><th>Estado</th></tr>${filas}</table></div></div>`:""}
     <div style="background:#f0f9ff;border-left:4px solid #3b82f6;padding:12px 16px;font-size:11px;color:#1e40af;border-radius:0 8px 8px 0;margin-bottom:16px">
       ⚠️ Documento informativo. No implica reconocimiento de deuda. Los montos pueden estar sujetos a actualizaciones.
     </div>
@@ -2466,7 +2493,6 @@ const Presupuesto=({t})=>{
       <div class="seccion">
         <div class="seccion-titulo">💰 Detalle del ${tipo}</div>
         <div class="seccion-body" style="text-align:center">
-          <div class="metrica"><div class="metrica-label">Monto solicitado</div><div class="metrica-valor">${fmt(montoN)}</div></div>
           <div class="metrica"><div class="metrica-label">Cuotas</div><div class="metrica-valor">${cuotasN} cuota${cuotasN!==1?"s":""} ${frecuencia.toLowerCase()}${cuotasN!==1?"es":""}</div></div>
           <div class="metrica"><div class="metrica-label">Valor por cuota</div><div class="metrica-valor" style="color:#10b981">${fmt(valorCuota)}</div></div>
         </div>
@@ -2497,7 +2523,7 @@ const Presupuesto=({t})=>{
         <p style={{color:t.sub,margin:0,fontSize:13}}>Calculá cuotas y generá el PDF para enviar al cliente</p>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:20}}>
         {/* PANEL IZQUIERDO — INPUTS */}
         <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"24px"}}>
           <h3 style={{margin:"0 0 18px",fontSize:15,fontWeight:700,color:t.text}}>Configurar presupuesto</h3>
@@ -2829,7 +2855,13 @@ export default function App(){
           {screen==="papelera"&&<Papelera setCreditos={setCreditos} setProductos={setProductos} t={t}/>}
         </main>
         <nav style={{position:"fixed",bottom:0,left:0,right:0,background:t.sidebar,borderTop:"1px solid #ffffff15",display:"flex",justifyContent:"space-around",padding:"6px 0 8px",zIndex:200,boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
-          {NAV.slice(0,5).map(n=>(
+          {[
+            {id:"dashboard",label:"Inicio",icon:"dashboard"},
+            {id:"clientes",label:"Clientes",icon:"users"},
+            {id:"creditos",label:"Créditos",icon:"creditos"},
+            {id:"productos",label:"Ventas",icon:"productos"},
+            {id:"alertas",label:"Alertas",icon:"alert"},
+          ].map(n=>(
             <button key={n.id} onClick={()=>setScreen(n.id)}
               style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"4px 8px",background:"none",border:"none",cursor:"pointer",color:screen===n.id?t.accent:t.sidebarText,flex:1,position:"relative"}}>
               <Icon name={n.icon} size={20}/>
@@ -2838,16 +2870,24 @@ export default function App(){
             </button>
           ))}
           {/* Menú más */}
-          <button onClick={()=>setScreen(screen==="usuarios"||screen==="papelera"?"dashboard":screen==="alertas"?"usuarios":"usuarios")}
-            style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"4px 8px",background:"none",border:"none",cursor:"pointer",color:(screen==="usuarios"||screen==="papelera")?t.accent:t.sidebarText,flex:1}}>
+          <button onClick={()=>setScreen(["usuarios","papelera","presupuesto","cartera"].includes(screen)?"dashboard":"mas")}
+            style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"4px 8px",background:"none",border:"none",cursor:"pointer",color:["usuarios","papelera","presupuesto","cartera","mas"].includes(screen)?t.accent:t.sidebarText,flex:1}}>
             <Icon name="menu" size={20}/>
             <span style={{fontSize:9,fontWeight:400}}>Más</span>
           </button>
         </nav>
 
         {/* Menú flotante "Más" con opciones extra */}
-        {(screen==="usuarios"||screen==="papelera")&&(
+        {(screen==="mas"||["usuarios","papelera","presupuesto","cartera"].includes(screen))&&(
           <div style={{position:"fixed",bottom:70,right:14,zIndex:300,display:"flex",flexDirection:"column",gap:8}}>
+            <button onClick={()=>setScreen("presupuesto")}
+              style={{background:screen==="presupuesto"?t.accent:t.card,color:screen==="presupuesto"?"#fff":t.text,border:`1px solid ${t.border}`,borderRadius:12,padding:"10px 16px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 4px 16px rgba(0,0,0,0.2)"}}>
+              🧮 Presupuesto
+            </button>
+            <button onClick={()=>setScreen("cartera")}
+              style={{background:screen==="cartera"?t.accent:t.card,color:screen==="cartera"?"#fff":t.text,border:`1px solid ${t.border}`,borderRadius:12,padding:"10px 16px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 4px 16px rgba(0,0,0,0.2)"}}>
+              💼 Cartera
+            </button>
             <button onClick={()=>setScreen("papelera")}
               style={{background:screen==="papelera"?t.accent:t.card,color:screen==="papelera"?"#fff":t.text,border:`1px solid ${t.border}`,borderRadius:12,padding:"10px 16px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 4px 16px rgba(0,0,0,0.2)"}}>
               🗑 Papelera

@@ -614,12 +614,35 @@ const TablaCuotas=({credito,onActualizar,t})=>{
   const [editFecha,setEditFecha]=useState("");
   const [editMonto,setEditMonto]=useState("");
   const [editValorCuota,setEditValorCuota]=useState("");
-  const [modo,setModo]=useState("fecha"); // "fecha" | "pago" | "valor"
+  const [editFechaPago,setEditFechaPago]=useState("");
+  const [modo,setModo]=useState("fecha"); // "fecha" | "pago" | "valor" | "fechapago"
   const detalles=credito.detalleCuotas||[];
 
   const abrirEditFecha=(i)=>{setEditIdx(i);setEditFecha(detalles[i]?.fechaVenc||"");setModo("fecha");};
   const abrirEditPago=(i)=>{setEditIdx(i);setEditMonto(detalles[i]?.montoPagado?.toString()||"0");setModo("pago");};
   const abrirEditValor=(i)=>{setEditIdx(i);setEditValorCuota((detalles[i]?.valorCuotaEditado||credito.valorCuota)?.toString()||"");setModo("valor");};
+  const abrirEditFechaPago=(i)=>{
+    // Convertir fecha de pago de formato dd/mm/yyyy a yyyy-mm-dd para el input date
+    const fp=detalles[i]?.fechaPago||"";
+    let fechaInput="";
+    if(fp){
+      const partes=fp.split("/");
+      if(partes.length===3)fechaInput=`${partes[2]}-${partes[1].padStart(2,"0")}-${partes[0].padStart(2,"0")}`;
+    }
+    if(!fechaInput)fechaInput=new Date().toISOString().slice(0,10);
+    setEditIdx(i);setEditFechaPago(fechaInput);setModo("fechapago");
+  };
+
+  const guardarFechaPago=()=>{
+    if(editIdx===null)return;
+    const nuevos=[...detalles];
+    // Convertir yyyy-mm-dd a dd/mm/yyyy
+    const [y,m,d]=editFechaPago.split("-");
+    const fechaFormateada=`${d}/${m}/${y}`;
+    nuevos[editIdx]={...nuevos[editIdx],fechaPago:fechaFormateada};
+    onActualizar({...credito,detalleCuotas:nuevos});
+    setEditIdx(null);
+  };
 
   const guardarFecha=()=>{
     if(editIdx===null)return;
@@ -731,7 +754,23 @@ const TablaCuotas=({credito,onActualizar,t})=>{
                   <td style={{padding:"8px 10px",color:saldoCuota>0?"#ef4444":t.accent2,fontWeight:700}}>{fmt(saldoCuota)}</td>
                   <td style={{padding:"8px 10px"}}>
                     <span style={{color:estadoColor,fontWeight:600,fontSize:11}}>{d.estado}</span>
-                    {d.fechaPago&&<div style={{fontSize:10,color:t.sub}}>{d.fechaPago}</div>}
+                    {d.fechaPago&&(
+                      <div style={{display:"flex",alignItems:"center",gap:3,marginTop:2}}>
+                        {editandoEsta&&modo==="fechapago"?(
+                          <div style={{display:"flex",gap:3,alignItems:"center"}}>
+                            <input type="date" value={editFechaPago} onChange={e=>setEditFechaPago(e.target.value)}
+                              style={{padding:"3px 6px",borderRadius:5,border:`1px solid #10b981`,background:t.input,color:t.text,fontSize:11,outline:"none"}}/>
+                            <button onClick={guardarFechaPago} style={{background:"#10b981",border:"none",borderRadius:5,padding:"3px 6px",color:"#fff",cursor:"pointer",fontSize:10,fontWeight:700}}>OK</button>
+                            <button onClick={()=>setEditIdx(null)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:5,padding:"3px 5px",color:t.sub,cursor:"pointer"}}><Icon name="close" size={10}/></button>
+                          </div>
+                        ):(
+                          <div style={{display:"flex",alignItems:"center",gap:3}}>
+                            <span style={{fontSize:10,color:"#10b981"}}>{d.fechaPago}</span>
+                            <button onClick={()=>abrirEditFechaPago(i)} style={{background:"none",border:"none",cursor:"pointer",color:"#10b981",padding:1,display:"flex",alignItems:"center"}} title="Editar fecha de pago"><Icon name="edit" size={10}/></button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td style={{padding:"8px 10px"}}>
                     <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>

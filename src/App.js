@@ -506,7 +506,6 @@ const backupPorEmail=(creditos,clientes,productos,ventasContado,emailDestino)=>{
   const cuerpo=encodeURIComponent(`Backup ControlCredit — ${fecha}\n\nCréditos activos: ${activos.length}\nClientes morosos: ${morosos.length}\nSaldo total pendiente: ${fmt(totalPendiente)}\nGanancia realizada: ${fmt(gananciaReal)}\nVentas financiadas activas: ${prodActivos.length}\n\nAdjuntá el archivo ${nombreArchivo} que se descargó.\n\n— ControlCredit`);
   setTimeout(()=>window.open(`https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(emailDestino)}&su=${asunto}&body=${cuerpo}`,"_blank"),1000);
 };
-};
 
 // ── BUSCADOR DE CLIENTE ───────────────────────────────────────────────────────
 const ClienteBuscador=({clients,onSelect,t})=>{

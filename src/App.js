@@ -39,7 +39,7 @@ const generarFechasCuotas=(fechaOtorg,frecuencia,cantCuotas)=>{
 const crearDetalleCuotas=(fechaOtorg,frecuencia,cantCuotas,valorCuota)=>{const fechas=generarFechasCuotas(fechaOtorg,frecuencia,cantCuotas);return fechas.map((fecha,i)=>({num:i+1,fechaVenc:fecha,montoPagado:0,estado:"Pendiente",fechaPago:null}));};
 
 // Helpers para convertir entre snake_case (Supabase) y camelCase (App)
-const clientFromDB=(r)=>({id:r.id,nombre:r.nombre,apellido:r.apellido,dni:r.dni||"",email:r.email||"",tel:r.tel||"",ciudad:r.ciudad||"",provincia:r.provincia||"",estado:r.estado||"Al día",score:r.score||75,sueldo:r.sueldo||"",ocupacion:r.ocupacion||"",empresa:r.empresa||"",estadoCivil:r.estado_civil||"",nacimiento:r.nacimiento||"",notas:r.notas||"",usuarioId:r.usuario_id||0,dniFrenteUrl:r.dni_frente||"",dniDorsoUrl:r.dni_dorso||""});
+const clientFromDB=(r)=>({id:r.id,nombre:r.nombre,apellido:r.apellido,dni:r.dni||"",email:r.email||"",tel:r.tel||"",ciudad:r.ciudad||"",provincia:r.provincia||"",estado:r.estado||"Al día",score:r.score||75,sueldo:r.sueldo||"",ocupacion:r.ocupacion||"",empresa:r.empresa||"",estadoCivil:r.estado_civil||"",nacimiento:r.nacimiento||"",notas:r.notas||"",usuarioId:r.usuario_id||0,dniFrenteUrl:r.dni_frente||"",dniDorsoUrl:r.dni_dorso||"",direccion:r.direccion||"",mapsLink:r.maps_link||""});
 const creditoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,monto:r.monto,totalCobrar:r.total_cobrar,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,valorCuota:r.valor_cuota,saldoCobrado:r.saldo_cobrado||0,saldoPendiente:r.saldo_pendiente,frecuencia:r.frecuencia,fechaOtorg:r.fecha_otorg,proximoPago:r.proximo_pago,estado:r.estado,comentarios:r.comentarios||"",historial:r.historial||[],detalleCuotas:r.detalle_cuotas||[],usuarioId:r.usuario_id||0,pagareUrl:r.pagare_url||""});
 const productoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,producto:r.producto,inversion:r.inversion,precioFinanciado:r.precio_financiado,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,saldoCobrado:r.saldo_cobrado||0,saldoPendiente:r.saldo_pendiente||r.precio_financiado||0,valorCuota:r.valor_cuota||Math.round((r.precio_financiado||0)/(r.cuotas||1)),estado:r.estado,frecuencia:r.frecuencia,usuarioId:r.usuario_id||0,detalleCuotas:r.detalle_cuotas||[],fechaOtorg:r.fecha_otorg||"",proximoPago:r.proximo_pago||"",entrega:r.entrega||0});
 
@@ -78,7 +78,26 @@ const generatePDF=(credito)=>{
     <div class="seccion">
       <div class="seccion-titulo">Datos del cliente</div>
       <div class="seccion-body">
-        <table><tr><td><strong>Cliente:</strong> ${credito.clienteNombre}</td><td><strong>Estado:</strong> <span class="badge ${credito.estado==="Al día"?"badge-verde":credito.estado==="Moroso"?"badge-rojo":"badge-amarillo"}">${credito.estado}</span></td><td><strong>Frecuencia:</strong> ${credito.frecuencia}</td><td><strong>Fecha otorgamiento:</strong> ${fmtFecha(credito.fechaOtorg)}</td></tr></table>
+        <table><tr>
+          <td><strong>Cliente:</strong> ${credito.clienteNombre}</td>
+          <td><strong>Estado actual:</strong> ${(()=>{
+            const hoy=new Date();hoy.setHours(0,0,0,0);
+            const det=credito.detalleCuotas||[];
+            const vencidas=det.filter(d=>(d.estado==="Pendiente"||d.estado==="Parcial")&&d.fechaVenc&&new Date(d.fechaVenc)<hoy);
+            const diasMax=vencidas.length>0?Math.round((hoy-new Date(vencidas[0].fechaVenc))/(1000*60*60*24)):0;
+            let estadoReal=credito.estado;
+            if(credito.estado!=="Finalizado"){
+              if(diasMax>15)estadoReal="Moroso";
+              else if(diasMax>3)estadoReal="Atrasado";
+              else if(vencidas.length===0&&credito.estado!=="Moroso"&&credito.estado!=="Atrasado")estadoReal="Al día";
+            }
+            const badgeColor=estadoReal==="Al día"?"badge-verde":estadoReal==="Moroso"?"badge-rojo":"badge-amarillo";
+            const diasMsg=diasMax>0?` (${diasMax} día${diasMax!==1?"s":""} de atraso)`:"";
+            return`<span class="badge ${badgeColor}">${estadoReal}</span><span style="font-size:10px;color:#64748b">${diasMsg}</span>`;
+          })()}</td>
+          <td><strong>Frecuencia:</strong> ${credito.frecuencia}</td>
+          <td><strong>Fecha otorgamiento:</strong> ${fmtFecha(credito.fechaOtorg)}</td>
+        </tr></table>
       </div>
     </div>
     <div class="seccion">
@@ -420,42 +439,59 @@ const exportarExcelProductos=(productos,ventasContado=[])=>{
 const backupPorEmail=(creditos,clientes,productos,ventasContado,emailDestino)=>{
   const fecha=new Date().toLocaleDateString("es-AR");
   const activos=creditos.filter(c=>c.estado!=="Finalizado");
-  const morosos=creditos.filter(c=>c.estado==="Moroso"||c.estado==="Atrasado");
   const prodActivos=productos.filter(p=>p.estado!=="Finalizado");
 
-  // Generar CSV completo
   let csv="";
 
-  // Hoja 1: Clientes activos
-  csv+="=== CLIENTES ACTIVOS ===\n";
-  csv+="NOMBRE,APELLIDO,DNI,TELÉFONO,EMAIL,CIUDAD,ESTADO,SCORE\n";
-  clientes.filter(c=>c.estado!=="Restringido").forEach(c=>{
-    csv+=`"${c.nombre}","${c.apellido}","${c.dni||""}","${c.tel||""}","${c.email||""}","${c.ciudad||""}","${c.estado}","${c.score||75}"\n`;
-  });
-
-  csv+="\n=== CRÉDITOS ACTIVOS Y MOROSOS ===\n";
-  csv+="CLIENTE,ESTADO,CAPITAL,TOTAL COBRAR,YA COBRADO,SALDO PENDIENTE,CUOTAS,CUOTAS PAGADAS,VALOR CUOTA,FRECUENCIA,PRÓX VENCIMIENTO\n";
+  // ── CRÉDITOS ACTIVOS ──
+  csv+="CRÉDITOS ACTIVOS\n";
+  csv+="CLIENTE,DNI,TELÉFONO,DIRECCIÓN,ESTADO,FECHA CRÉDITO,CAPITAL,TOTAL A COBRAR,CUOTAS TOTALES,CUOTAS PAGADAS,CUOTAS RESTANTES,VALOR CUOTA,SALDO COBRADO,SALDO PENDIENTE,FRECUENCIA,PRÓX. VENCIMIENTO\n";
   activos.forEach(c=>{
-    csv+=`"${c.clienteNombre}","${c.estado}","${c.monto}","${c.totalCobrar}","${c.saldoCobrado}","${c.saldoPendiente}","${c.cuotas}","${c.cuotasPagadas}","${c.valorCuota}","${c.frecuencia}","${fmtFecha(c.proximoPago)}"\n`;
+    const cl=clientes.find(x=>x.id===c.clienteId);
+    const restantes=c.cuotas-c.cuotasPagadas;
+    csv+=`"${c.clienteNombre}","${cl?.dni||""}","${cl?.tel||""}","${cl?.direccion||""}","${c.estado}","${fmtFecha(c.fechaOtorg)}","${c.monto}","${c.totalCobrar}","${c.cuotas}","${c.cuotasPagadas}","${restantes}","${c.valorCuota}","${c.saldoCobrado}","${c.saldoPendiente}","${c.frecuencia}","${fmtFecha(c.proximoPago)}"\n`;
+    // Detalle de cuotas
+    if(c.detalleCuotas?.length>0){
+      csv+="  ,Cuota #,Vencimiento,Fecha Pago,Valor,Pagado,Saldo,Estado\n";
+      c.detalleCuotas.forEach(d=>{
+        const vc=d.valorCuotaEditado||c.valorCuota;
+        csv+=`  ,"${d.num}","${fmtFecha(d.fechaVenc)}","${d.fechaPago||"—"}","${vc}","${d.montoPagado}","${Math.max(0,vc-d.montoPagado)}","${d.estado}"\n`;
+      });
+      csv+="  ,,,,,,,\n";
+    }
   });
 
-  csv+="\n=== VENTAS FINANCIADAS ACTIVAS ===\n";
-  csv+="CLIENTE,PRODUCTO,INVERSIÓN,FINANCIADO,GANANCIA,CUOTAS,CUOTAS PAGADAS,SALDO PENDIENTE,FRECUENCIA,ESTADO\n";
-  prodActivos.forEach(p=>{
-    const vc=p.valorCuota||Math.round(p.precioFinanciado/p.cuotas);
-    const saldo=(p.cuotas-p.cuotasPagadas)*vc;
-    csv+=`"${p.clienteNombre}","${p.producto}","${p.inversion}","${p.precioFinanciado}","${p.ganancia}","${p.cuotas}","${p.cuotasPagadas}","${saldo}","${p.frecuencia}","${p.estado}"\n`;
-  });
+  // ── VENTAS FINANCIADAS ──
+  if(prodActivos.length>0){
+    csv+="\nVENTAS FINANCIADAS ACTIVAS\n";
+    csv+="CLIENTE,PRODUCTO,INVERSIÓN,PRECIO FINANCIADO,GANANCIA,CUOTAS TOTALES,CUOTAS PAGADAS,CUOTAS RESTANTES,VALOR CUOTA,SALDO PENDIENTE,FRECUENCIA,ESTADO,FECHA\n";
+    prodActivos.forEach(p=>{
+      const vc=p.valorCuota||Math.round(p.precioFinanciado/p.cuotas);
+      const restantes=p.cuotas-p.cuotasPagadas;
+      csv+=`"${p.clienteNombre}","${p.producto}","${p.inversion}","${p.precioFinanciado}","${p.ganancia}","${p.cuotas}","${p.cuotasPagadas}","${restantes}","${vc}","${p.saldoPendiente||restantes*vc}","${p.frecuencia}","${p.estado}","${fmtFecha(p.fechaOtorg)}"\n`;
+    });
+  }
 
+  // ── VENTAS DE CONTADO ──
   if(ventasContado.length>0){
-    csv+="\n=== VENTAS DE CONTADO ===\n";
+    csv+="\nVENTAS DE CONTADO\n";
     csv+="PRODUCTO,CLIENTE,COSTO,PRECIO VENTA,GANANCIA,FECHA\n";
     ventasContado.forEach(v=>{
       csv+=`"${v.producto}","${v.cliente_nombre||"—"}","${v.costo}","${v.precio_venta}","${v.ganancia}","${fmtFecha(v.fecha)}"\n`;
     });
   }
 
-  // Descargar el archivo
+  // ── CLIENTES MOROSOS ──
+  const morosos=clientes.filter(c=>c.estado==="Moroso");
+  if(morosos.length>0){
+    csv+="\nCLIENTES MOROSOS\n";
+    csv+="NOMBRE,DNI,TELÉFONO,DIRECCIÓN,DEUDA TOTAL\n";
+    morosos.forEach(m=>{
+      const deuda=creditos.filter(c=>c.clienteId===m.id&&c.estado!=="Finalizado").reduce((s,c)=>s+c.saldoPendiente,0);
+      csv+=`"${m.nombre} ${m.apellido}","${m.dni||""}","${m.tel||""}","${m.direccion||""}","${deuda}"\n`;
+    });
+  }
+
   const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");
@@ -464,33 +500,12 @@ const backupPorEmail=(creditos,clientes,productos,ventasContado,emailDestino)=>{
   document.body.appendChild(a);a.click();document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url),2000);
 
-  // Resumen para el email
-  const totalEnLaCalle=activos.reduce((s,c)=>s+c.saldoPendiente,0);
+  const totalPendiente=activos.reduce((s,c)=>s+c.saldoPendiente,0);
   const gananciaReal=creditos.reduce((s,c)=>s+(c.ganancia/c.cuotas)*c.cuotasPagadas,0);
-
   const asunto=encodeURIComponent(`ControlCredit — Backup ${fecha}`);
-  const cuerpo=encodeURIComponent(
-`Backup de ControlCredit — ${fecha}
-
-RESUMEN DEL NEGOCIO:
-• Clientes activos: ${clientes.length}
-• Morosos: ${morosos.length}
-• Créditos activos: ${activos.length}
-• Saldo total pendiente: ${fmt(totalEnLaCalle)}
-• Ganancia realizada: ${fmt(gananciaReal)}
-• Ventas financiadas activas: ${prodActivos.length}
-• Ventas de contado: ${ventasContado.length}
-
-El archivo CSV adjunto contiene el detalle completo.
-(Adjuntá el archivo ${nombreArchivo} que se descargó automáticamente)
-
-— ControlCredit`
-  );
-
-  // Abrir Gmail con el resumen
-  setTimeout(()=>{
-    window.open(`https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(emailDestino)}&su=${asunto}&body=${cuerpo}`,"_blank");
-  },1000);
+  const cuerpo=encodeURIComponent(`Backup ControlCredit — ${fecha}\n\nCréditos activos: ${activos.length}\nClientes morosos: ${morosos.length}\nSaldo total pendiente: ${fmt(totalPendiente)}\nGanancia realizada: ${fmt(gananciaReal)}\nVentas financiadas activas: ${prodActivos.length}\n\nAdjuntá el archivo ${nombreArchivo} que se descargó.\n\n— ControlCredit`);
+  setTimeout(()=>window.open(`https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(emailDestino)}&su=${asunto}&body=${cuerpo}`,"_blank"),1000);
+};
 };
 
 // ── BUSCADOR DE CLIENTE ───────────────────────────────────────────────────────
@@ -916,7 +931,8 @@ const PerfilCliente=({client,creditos,productos,setCreditos,onClose,onEdit,t})=>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
           <div style={{background:t.card,borderRadius:12,border:`1px solid ${t.border}`,padding:"16px 18px"}}>
             <h3 style={{margin:"0 0 10px",fontSize:13,fontWeight:700,color:t.text}}>📋 Datos personales</h3>
-            {[["Email",client.email],["Teléfono",client.tel],["Nacimiento",client.nacimiento],["Estado civil",client.estadoCivil],["Ciudad",client.ciudad],["Provincia",client.provincia]].map(([k,v])=>v?(<div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${t.border}`}}><span style={{fontSize:11,color:t.sub}}>{k}</span><span style={{fontSize:11,fontWeight:600,color:t.text}}>{v}</span></div>):null)}
+            {[["Email",client.email],["Teléfono",client.tel],["Nacimiento",client.nacimiento],["Estado civil",client.estadoCivil],["Ciudad",client.ciudad],["Provincia",client.provincia],["Dirección",client.direccion]].map(([k,v])=>v?(<div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${t.border}`}}><span style={{fontSize:11,color:t.sub}}>{k}</span><span style={{fontSize:11,fontWeight:600,color:t.text}}>{v}</span></div>):null)}
+            {client.mapsLink&&<a href={client.mapsLink} target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:t.accent,marginTop:6,textDecoration:"none"}}>🗺 Ver domicilio en Google Maps</a>}
           </div>
           <div style={{background:t.card,borderRadius:12,border:`1px solid ${t.border}`,padding:"16px 18px"}}>
             <h3 style={{margin:"0 0 10px",fontSize:13,fontWeight:700,color:t.text}}>💼 Trabajo</h3>
@@ -1731,7 +1747,7 @@ const Clientes=({clients,setClients,creditos,setCreditos,productos,usuarioActual
   const [loading,setLoading]=useState(false);
   const [scanLoading,setScanLoading]=useState(false);
   const dniRef=useRef();
-  const EF={nombre:"",apellido:"",dni:"",email:"",tel:"",ciudad:"",provincia:"",estado:"Al día",sueldo:"",ocupacion:"",empresa:"",estadoCivil:"Soltero/a",nacimiento:"",score:75,notas:""};
+  const EF={nombre:"",apellido:"",dni:"",email:"",tel:"",ciudad:"",provincia:"",estado:"Al día",sueldo:"",ocupacion:"",empresa:"",estadoCivil:"Soltero/a",nacimiento:"",score:75,notas:"",direccion:"",mapsLink:""};
   const [form,setForm]=useState(EF);
   const filtered=clients.filter(c=>{const q=search.toLowerCase();return(c.nombre.toLowerCase().includes(q)||c.apellido.toLowerCase().includes(q)||(c.dni||"").includes(q))&&(filtro==="Todos"||c.estado===filtro);});
   const openEdit=(c,e)=>{if(e)e.stopPropagation();setSel(c);setForm({...EF,...c});setModal(true);};
@@ -1778,7 +1794,7 @@ Si no encontrás algún dato dejalo vacío. El DNI son solo los números sin pun
   const save=async()=>{
     if(!form.nombre)return;
     setLoading(true);
-    const data={nombre:form.nombre,apellido:form.apellido,dni:form.dni,email:form.email,tel:form.tel,ciudad:form.ciudad,provincia:form.provincia,estado:form.estado,score:+form.score||75,sueldo:+form.sueldo||null,ocupacion:form.ocupacion,empresa:form.empresa,estado_civil:form.estadoCivil,nacimiento:form.nacimiento,notas:form.notas,usuario_id:usuarioActual?.id||0};
+    const data={nombre:form.nombre,apellido:form.apellido,dni:form.dni,email:form.email,tel:form.tel,ciudad:form.ciudad,provincia:form.provincia,estado:form.estado,score:+form.score||75,sueldo:+form.sueldo||null,ocupacion:form.ocupacion,empresa:form.empresa,estado_civil:form.estadoCivil,nacimiento:form.nacimiento,notas:form.notas,usuario_id:usuarioActual?.id||0,direccion:form.direccion||"",maps_link:form.mapsLink||""};
     if(sel){
       const {data:updated}=await sb.from("clientes").update(data).eq("id",sel.id).select().single();
       if(updated)setClients(cs=>cs.map(c=>c.id===sel.id?clientFromDB(updated):c));
@@ -1884,6 +1900,12 @@ Si no encontrás algún dato dejalo vacío. El DNI son solo los números sin pun
           <Field label="Estado" value={form.estado} onChange={v=>setForm(f=>({...f,estado:v}))} options={["Al día","Moroso","Atrasado","Premium","Restringido"]} t={t}/>
           <div style={{marginBottom:14}}><label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:4,textTransform:"uppercase"}}>Score ({form.score})</label><input type="range" min={0} max={100} value={form.score} onChange={e=>setForm(f=>({...f,score:+e.target.value}))} style={{width:"100%"}}/></div>
           <div style={{gridColumn:"1/-1",marginBottom:14}}><label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:4,textTransform:"uppercase"}}>Notas internas</label><textarea value={form.notas} onChange={e=>setForm(f=>({...f,notas:e.target.value}))} rows={3} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box",resize:"vertical"}}/></div>
+          <div style={{gridColumn:"1/-1"}}><Field label="Dirección del domicilio" value={form.direccion||""} onChange={v=>setForm(f=>({...f,direccion:v}))} t={t} placeholder="Ej: San Martín 1234, Piso 2"/></div>
+          <div style={{gridColumn:"1/-1",marginBottom:14}}>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:4,textTransform:"uppercase"}}>Link Google Maps (opcional)</label>
+            <input value={form.mapsLink||""} onChange={e=>setForm(f=>({...f,mapsLink:e.target.value}))} placeholder="Pegá el link de Google Maps del domicilio" style={{width:"100%",padding:"9px 12px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+            {form.mapsLink&&<a href={form.mapsLink} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:t.accent,marginTop:4,display:"inline-block"}}>🗺 Ver en Maps</a>}
+          </div>
         </div>
         <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
           <button onClick={()=>setModal(false)} style={{padding:"9px 18px",borderRadius:8,border:`1px solid ${t.border}`,background:"none",color:t.sub,cursor:"pointer",fontWeight:600}}>Cancelar</button>
@@ -2145,7 +2167,7 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
     setLoading(true);
     const vc=Math.round(+form.precioFinanciado/+form.cuotas);
     const det=crearDetalleCuotas(form.fechaOtorg,form.frecuencia,+form.cuotas,vc);
-    const entregaN=+form.entrega||0;const precioRestante=Math.max(0,+form.precioFinanciado-entregaN);const vcConEntrega=Math.round(precioRestante/+form.cuotas);const detConEntrega=crearDetalleCuotas(form.fechaOtorg,form.frecuencia,+form.cuotas,vcConEntrega);const data={cliente_id:+form.clienteId,cliente_nombre:`${client.nombre} ${client.apellido}`,producto:form.producto,inversion:+form.inversion,precio_financiado:+form.precioFinanciado,ganancia:+form.precioFinanciado-+form.inversion,cuotas:+form.cuotas,cuotas_pagadas:0,saldo_cobrado:entregaN,saldo_pendiente:precioRestante,valor_cuota:vcConEntrega,estado:form.estado,frecuencia:form.frecuencia,usuario_id:usuarioActual?.id||0,detalle_cuotas:detConEntrega,fecha_otorg:form.fechaOtorg,proximo_pago:detConEntrega[0]?.fechaVenc||"",entrega:entregaN};
+    const entregaN=+form.entrega||0;const vc2=Math.round(+form.precioFinanciado/+form.cuotas);const det2=crearDetalleCuotas(form.fechaOtorg,form.frecuencia,+form.cuotas,vc2);const data={cliente_id:+form.clienteId,cliente_nombre:`${client.nombre} ${client.apellido}`,producto:form.producto,inversion:+form.inversion,precio_financiado:+form.precioFinanciado,ganancia:+form.precioFinanciado-+form.inversion,cuotas:+form.cuotas,cuotas_pagadas:0,saldo_cobrado:0,saldo_pendiente:+form.precioFinanciado,valor_cuota:vc2,estado:form.estado,frecuencia:form.frecuencia,usuario_id:usuarioActual?.id||0,detalle_cuotas:det2,fecha_otorg:form.fechaOtorg,proximo_pago:det2[0]?.fechaVenc||"",entrega:entregaN};
     const {data:created}=await sb.from("productos").insert(data).select().single();
     if(created)setProductos(ps=>[...ps,productoFromDB(created)]);
     setLoading(false);setModal(false);setForm(EF);

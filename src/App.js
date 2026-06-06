@@ -2349,11 +2349,11 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
           <Field label="Estado" value={form.estado} onChange={v=>setForm(f=>({...f,estado:v}))} options={["Activo","Atrasado","Moroso"]} t={t}/>
         </div>
         {form.inversion&&form.precioFinanciado&&form.cuotas&&<div style={{background:t.bg,borderRadius:10,padding:"12px 16px",marginBottom:14,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-          <div style={{textAlign:"center"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:700,marginBottom:2}}>Cuota</div><div style={{fontSize:16,fontWeight:800,color:t.accent}}>{fmt(Math.round((+form.precioFinanciado-(+form.entrega||0))/+form.cuotas))}</div></div>
+          <div style={{textAlign:"center"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:700,marginBottom:2}}>Cuota</div><div style={{fontSize:16,fontWeight:800,color:t.accent}}>{fmt(Math.round(+form.precioFinanciado/+form.cuotas))}</div></div>
           <div style={{textAlign:"center"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:700,marginBottom:2}}>Ganancia</div><div style={{fontSize:16,fontWeight:800,color:t.accent2}}>{fmt(+form.precioFinanciado-+form.inversion)}</div></div>
           <div style={{textAlign:"center"}}><div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:700,marginBottom:2}}>Rentab.</div><div style={{fontSize:16,fontWeight:800,color:"#8b5cf6"}}>{Math.round(((+form.precioFinanciado-+form.inversion)/(+form.inversion||1))*100)}%</div></div>
           {+form.entrega>0&&<div style={{gridColumn:"1/-1",textAlign:"center",background:"#10b98115",borderRadius:8,padding:"8px",fontSize:12,color:"#10b981",fontWeight:600}}>
-            ✓ Entrega de {fmt(+form.entrega)} · Saldo a financiar: {fmt(Math.max(0,+form.precioFinanciado-+form.entrega))}
+            ✓ Entrega registrada: {fmt(+form.entrega)} (solo informativo — no afecta las cuotas)
           </div>}
         </div>}
         <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>

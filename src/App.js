@@ -1263,6 +1263,98 @@ const AdminUsuarios=({t,allClients,allCreditos,allProductos,allVentasContado})=>
     </div>
   );
 };
+// ── FLUJO DE CAJA DEL MES ─────────────────────────────────────────────────────
+const FlujoCajaDelMes=({creditos,productos,ventasContado,t})=>{
+  const hoy=new Date();
+  const anio=hoy.getFullYear();
+  const mes=hoy.getMonth()+1;
+  const fechaDesde=`${anio}-${String(mes).padStart(2,"0")}-01`;
+  const ultimoDia=new Date(anio,mes,0).getDate();
+  const fechaHasta=`${anio}-${String(mes).padStart(2,"0")}-${ultimoDia}`;
+  const nombreMes=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"][mes-1];
+
+  const cuotasCredMes=creditos.filter(c=>c.estado!=="Finalizado")
+    .flatMap(c=>(c.detalleCuotas||[])
+      .filter(d=>d.fechaVenc>=fechaDesde&&d.fechaVenc<=fechaHasta)
+      .map(d=>({...d,valorReal:d.valorCuotaEditado||c.valorCuota}))
+    );
+  const cuotasProdMes=productos.filter(p=>p.estado!=="Finalizado")
+    .flatMap(p=>(p.detalleCuotas||[])
+      .filter(d=>d.fechaVenc>=fechaDesde&&d.fechaVenc<=fechaHasta)
+      .map(d=>({...d,valorReal:d.valorCuotaEditado||p.valorCuota}))
+    );
+  const ventasMes=(ventasContado||[]).filter(v=>v.fecha>=fechaDesde&&v.fecha<=fechaHasta);
+
+  const proyectadoCred=cuotasCredMes.reduce((s,d)=>s+(d.valorReal||0),0);
+  const proyectadoProd=cuotasProdMes.reduce((s,d)=>s+(d.valorReal||0),0);
+  const proyectadoContado=ventasMes.reduce((s,v)=>s+(v.precio_venta||0),0);
+  const totalProyectado=proyectadoCred+proyectadoProd+proyectadoContado;
+
+  const cobradoCred=cuotasCredMes.reduce((s,d)=>s+(d.montoPagado||0),0);
+  const cobradoProd=cuotasProdMes.reduce((s,d)=>s+(d.montoPagado||0),0);
+  const totalCobrado=cobradoCred+cobradoProd+proyectadoContado;
+
+  const pendiente=Math.max(0,totalProyectado-totalCobrado);
+  const pct=totalProyectado>0?Math.round((totalCobrado/totalProyectado)*100):0;
+  const colorBarra=pct>=75?t.accent2:pct>=40?t.warning:t.danger;
+
+  const filas=[
+    {label:"Cuotas de créditos",icon:"💳",proyectado:proyectadoCred,cobrado:cobradoCred},
+    {label:"Ventas financiadas",icon:"🛒",proyectado:proyectadoProd,cobrado:cobradoProd},
+    {label:"Ventas de contado",icon:"💵",proyectado:proyectadoContado,cobrado:proyectadoContado},
+  ].filter(f=>f.proyectado>0);
+
+  return(
+    <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"20px 24px",marginBottom:20}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:8}}>
+        <div>
+          <div style={{fontSize:11,fontWeight:700,color:t.sub,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:3}}>💰 Flujo proyectado — {nombreMes} {anio}</div>
+          <div style={{fontSize:11,color:t.sub}}>01/{String(mes).padStart(2,"0")}/{anio} — {ultimoDia}/{String(mes).padStart(2,"0")}/{anio}</div>
+        </div>
+        <div style={{textAlign:"right"}}>
+          <div style={{fontSize:22,fontWeight:900,color:t.text}}>{fmt(totalProyectado)}</div>
+          <div style={{fontSize:11,color:t.sub}}>total esperado en {nombreMes}</div>
+        </div>
+      </div>
+      <div style={{marginBottom:filas.length>0?14:0}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
+          <span style={{fontSize:12,color:t.sub}}>Cobrado: <strong style={{color:colorBarra}}>{fmt(totalCobrado)}</strong></span>
+          <span style={{fontSize:12,color:t.sub}}>Pendiente: <strong style={{color:t.danger}}>{fmt(pendiente)}</strong></span>
+        </div>
+        <div style={{background:t.border,borderRadius:999,height:10,overflow:"hidden"}}>
+          <div style={{height:"100%",borderRadius:999,width:`${pct}%`,background:`linear-gradient(90deg,${colorBarra},${colorBarra}cc)`,transition:"width 0.6s ease",minWidth:pct>0?6:0}}/>
+        </div>
+        <div style={{textAlign:"right",marginTop:4,fontSize:12,fontWeight:700,color:colorBarra}}>{pct}% cobrado</div>
+      </div>
+      {filas.length>0&&(
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {filas.map(f=>{
+            const fp=f.proyectado>0?Math.round((f.cobrado/f.proyectado)*100):0;
+            return(
+              <div key={f.label} style={{background:t.bg,borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"center",gap:12}}>
+                <span style={{fontSize:18}}>{f.icon}</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                    <span style={{fontSize:12,color:t.text,fontWeight:600}}>{f.label}</span>
+                    <span style={{fontSize:11,color:t.sub}}>{fmt(f.cobrado)} / {fmt(f.proyectado)}</span>
+                  </div>
+                  <div style={{background:t.border,borderRadius:999,height:5}}>
+                    <div style={{height:"100%",borderRadius:999,width:`${fp}%`,background:fp>=75?t.accent2:fp>=40?t.warning:t.danger,minWidth:fp>0?4:0}}/>
+                  </div>
+                </div>
+                <span style={{fontSize:11,fontWeight:700,minWidth:34,textAlign:"right",color:fp>=75?t.accent2:fp>=40?t.warning:t.danger}}>{fp}%</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {totalProyectado===0&&(
+        <div style={{textAlign:"center",color:t.sub,fontSize:12,padding:"8px 0"}}>Sin movimientos proyectados para {nombreMes}</div>
+      )}
+    </div>
+  );
+};
+
 const Dashboard=({clients,creditos,setCreditos,productos,ventasContado=[],t})=>{
   const hoy=new Date();hoy.setHours(0,0,0,0);
   const [mesPDF,setMesPDF]=useState(hoy.getMonth()+1);
@@ -1566,6 +1658,9 @@ const Dashboard=({clients,creditos,setCreditos,productos,ventasContado=[],t})=>{
           </div>
         )}
       </div>
+
+      {/* FLUJO DE CAJA DEL MES — PROYECTADO */}
+      <FlujoCajaDelMes creditos={creditos} productos={productos} ventasContado={ventasContado} t={t}/>
 
       {/* FLUJO DE EFECTIVO */}
       {creditos.length>0&&(

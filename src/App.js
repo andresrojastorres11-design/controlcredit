@@ -1,12 +1,14 @@
 // Este archivo reemplaza el contenido de src/App.js
 // Supabase ya está integrado - los datos se guardan en la nube
 /* eslint-disable no-restricted-globals */
+/* eslint-disable no-unused-vars */
+/* eslint-disable no-useless-escape */
 
 import { useState, useEffect, useRef } from "react";
 import React from "react";
 import * as XLSX from "xlsx";
 import { createClient } from "@supabase/supabase-js";
-import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 
 // ── SUPABASE CONFIG ───────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://jlwfuaokefwxbwdfvppo.supabase.co";
@@ -48,7 +50,7 @@ const productoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.clien
 // ── PDF ENGINE ────────────────────────────────────────────────────────────────
 const abrirPDF=(html,nombre)=>{
   const estiloImpresion=`<style>@media print{@page{margin:15mm;size:A4}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style>`;
-  const fullHtml=`<!DOCTYPE html><html><head><meta charset="UTF-8">${estiloImpresion}<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:12px;color:#1a1a2e;background:#fff;padding:20px}.header{background:linear-gradient(135deg,#1e3a8a,#3b82f6);color:#fff;padding:24px 28px;border-radius:10px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center}.logo{font-size:26px;font-weight:900;letter-spacing:-1px}.logo span{opacity:0.7}.subtitulo{font-size:11px;opacity:0.8;margin-top:3px}.seccion{margin-bottom:18px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}.seccion-titulo{background:#f8fafc;padding:10px 16px;font-weight:700;font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #e2e8f0}.seccion-body{padding:14px 16px}table{width:100%;border-collapse:collapse}td,th{padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:11px;text-align:left}th{font-weight:700;color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:0.04em}tr:last-child td{border-bottom:none}.total-row td{background:#1e3a8a;color:#fff;font-weight:700;border:none;padding:10px 12px}.metrica{display:inline-block;background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 16px;margin:4px;min-width:120px;text-align:center}.metrica-label{font-size:9px;color:#64748b;text-transform:uppercase;font-weight:700;margin-bottom:3px}.metrica-valor{font-size:16px;font-weight:900;color:#1e40af}.badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700}.badge-verde{background:#d1fae5;color:#065f46}.badge-rojo{background:#fee2e2;color:#991b1b}.badge-amarillo{background:#fef3c7;color:#92400e}.footer{text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8}</style></head><body>${html}<script>window.onload=()=>{window.print();}<\/script></body></html>`;
+  const fullHtml=`<!DOCTYPE html><html><head><meta charset="UTF-8">${estiloImpresion}<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:12px;color:#1a1a2e;background:#fff;padding:20px}.header{background:linear-gradient(135deg,#1e3a8a,#3b82f6);color:#fff;padding:24px 28px;border-radius:10px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center}.logo{font-size:26px;font-weight:900;letter-spacing:-1px}.logo span{opacity:0.7}.subtitulo{font-size:11px;opacity:0.8;margin-top:3px}.seccion{margin-bottom:18px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}.seccion-titulo{background:#f8fafc;padding:10px 16px;font-weight:700;font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #e2e8f0}.seccion-body{padding:14px 16px}table{width:100%;border-collapse:collapse}td,th{padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:11px;text-align:left}th{font-weight:700;color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:0.04em}tr:last-child td{border-bottom:none}.total-row td{background:#1e3a8a;color:#fff;font-weight:700;border:none;padding:10px 12px}.metrica{display:inline-block;background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 16px;margin:4px;min-width:120px;text-align:center}.metrica-label{font-size:9px;color:#64748b;text-transform:uppercase;font-weight:700;margin-bottom:3px}.metrica-valor{font-size:16px;font-weight:900;color:#1e40af}.badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700}.badge-verde{background:#d1fae5;color:#065f46}.badge-rojo{background:#fee2e2;color:#991b1b}.badge-amarillo{background:#fef3c7;color:#92400e}.footer{text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8}</style></head><body>${html}<script>window.onload=()=>{window.print();}</script></body></html>`;
   const win=window.open("","_blank");
   if(win){win.document.write(fullHtml);win.document.close();}
 };
@@ -2143,7 +2145,7 @@ const Creditos=({creditos,setCreditos,clients,usuarioActual,soloVer=false,t})=>{
     }
   };
 
-  const clienteOpts=[{value:"",label:"— Seleccionar cliente —"},...clients.map(c=>({value:c.id,label:`${c.nombre} ${c.apellido} — DNI ${c.dni}`}))];
+
 
   return(
     <div>
@@ -2356,7 +2358,6 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
   };
 
   const gananciaContado=ventasContado.reduce((s,v)=>s+v.ganancia,0);
-  const vcForm=form.cuotas&&form.precioFinanciado?Math.round(+form.precioFinanciado/+form.cuotas):0;
 
   return(
     <div>
@@ -2953,7 +2954,6 @@ export default function App(){
   const t=dark?DARK:LIGHT;
 
   const esAdmin=usuarioActual?.rol==="admin"||usuarioActual?.user==="andres";
-  const esEmpresario=usuarioActual?.rol==="empresario"||esAdmin;
   const soloVer=usuarioActual?.rol==="administrador"; // Solo puede ver, no editar
   // Todos ven solo sus propios datos — admin NO ve todo automáticamente
   const uid=usuarioActual?.id||0;

@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import React from "react";
+import * as XLSX from "xlsx";
 import { createClient } from "@supabase/supabase-js";
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 
@@ -440,6 +441,96 @@ const backupPorEmail=(creditos,clientes,productos,ventasContado,emailDestino)=>{
   const fecha=new Date().toLocaleDateString("es-AR");
   const activos=creditos.filter(c=>c.estado!=="Finalizado");
   const prodActivos=productos.filter(p=>p.estado!=="Finalizado");
+  const morosos=clientes.filter(c=>c.estado==="Moroso");
+
+  const wb=XLSX.utils.book_new();
+
+  // ── HOJA 1: CRÉDITOS ACTIVOS ──
+  const filasCreditos=[
+    ["CLIENTE","DNI","TELÉFONO","DIRECCIÓN","ESTADO","FECHA CRÉDITO","CAPITAL","TOTAL A COBRAR","CUOTAS TOTALES","CUOTAS PAGADAS","CUOTAS RESTANTES","VALOR CUOTA","SALDO COBRADO","SALDO PENDIENTE","FRECUENCIA","PRÓX. VENCIMIENTO"],
+    ...activos.map(c=>{
+      const cl=clientes.find(x=>x.id===c.clienteId);
+      return[c.clienteNombre,cl?.dni||"",cl?.tel||"",cl?.direccion||"",c.estado,fmtFecha(c.fechaOtorg),c.monto,c.totalCobrar,c.cuotas,c.cuotasPagadas,c.cuotas-c.cuotasPagadas,c.valorCuota,c.saldoCobrado,c.saldoPendiente,c.frecuencia,fmtFecha(c.proximoPago)];
+    })
+  ];
+  const ws1=XLSX.utils.aoa_to_sheet(filasCreditos);
+  ws1["!cols"]=[{wch:25},{wch:12},{wch:14},{wch:30},{wch:12},{wch:14},{wch:12},{wch:14},{wch:8},{wch:8},{wch:8},{wch:12},{wch:12},{wch:14},{wch:12},{wch:14}];
+  XLSX.utils.book_append_sheet(wb,ws1,"Créditos activos");
+
+  // ── HOJA 2: DETALLE CUOTAS ──
+  const filasCuotas=[["CLIENTE","CUOTA #","VENCIMIENTO","FECHA PAGO","VALOR","PAGADO","SALDO","ESTADO"]];
+  activos.forEach(c=>{
+    (c.detalleCuotas||[]).forEach(d=>{
+      const vc=d.valorCuotaEditado||c.valorCuota;
+      filasCuotas.push([c.clienteNombre,d.num,fmtFecha(d.fechaVenc),d.fechaPago||"—",vc,d.montoPagado,Math.max(0,vc-d.montoPagado),d.estado]);
+    });
+  });
+  const ws2=XLSX.utils.aoa_to_sheet(filasCuotas);
+  ws2["!cols"]=[{wch:25},{wch:8},{wch:14},{wch:14},{wch:12},{wch:12},{wch:12},{wch:12}];
+  XLSX.utils.book_append_sheet(wb,ws2,"Detalle cuotas");
+
+  // ── HOJA 3: VENTAS FINANCIADAS ──
+  if(prodActivos.length>0){
+    const filasVentas=[["CLIENTE","PRODUCTO","INVERSIÓN","PRECIO FINANCIADO","GANANCIA","CUOTAS TOTALES","CUOTAS PAGADAS","CUOTAS RESTANTES","VALOR CUOTA","SALDO PENDIENTE","FRECUENCIA","ESTADO","FECHA"],
+      ...prodActivos.map(p=>{
+        const vc=p.valorCuota||Math.round(p.precioFinanciado/p.cuotas);
+        return[p.clienteNombre,p.producto,p.inversion,p.precioFinanciado,p.ganancia,p.cuotas,p.cuotasPagadas,p.cuotas-p.cuotasPagadas,vc,p.saldoPendiente||((p.cuotas-p.cuotasPagadas)*vc),p.frecuencia,p.estado,fmtFecha(p.fechaOtorg)];
+      })
+    ];
+    const ws3=XLSX.utils.aoa_to_sheet(filasVentas);
+    ws3["!cols"]=[{wch:25},{wch:20},{wch:12},{wch:16},{wch:12},{wch:8},{wch:8},{wch:8},{wch:12},{wch:14},{wch:12},{wch:12},{wch:14}];
+    XLSX.utils.book_append_sheet(wb,ws3,"Ventas financiadas");
+  }
+
+  // ── HOJA 4: VENTAS CONTADO ──
+  if(ventasContado.length>0){
+    const filasContado=[["PRODUCTO","CLIENTE","COSTO","PRECIO VENTA","GANANCIA","FECHA"],
+      ...ventasContado.map(v=>[v.producto,v.cliente_nombre||"—",v.costo,v.precio_venta,v.ganancia,fmtFecha(v.fecha)])
+    ];
+    const ws4=XLSX.utils.aoa_to_sheet(filasContado);
+    ws4["!cols"]=[{wch:25},{wch:25},{wch:12},{wch:14},{wch:12},{wch:14}];
+    XLSX.utils.book_append_sheet(wb,ws4,"Ventas contado");
+  }
+
+  // ── HOJA 5: CLIENTES MOROSOS ──
+  if(morosos.length>0){
+    const filasMorosos=[["NOMBRE","DNI","TELÉFONO","DIRECCIÓN","DEUDA TOTAL"],
+      ...morosos.map(m=>{
+        const deuda=creditos.filter(c=>c.clienteId===m.id&&c.estado!=="Finalizado").reduce((s,c)=>s+c.saldoPendiente,0);
+        return[`${m.nombre} ${m.apellido}`,m.dni||"",m.tel||"",m.direccion||"",deuda];
+      })
+    ];
+    const ws5=XLSX.utils.aoa_to_sheet(filasMorosos);
+    ws5["!cols"]=[{wch:25},{wch:12},{wch:14},{wch:30},{wch:14}];
+    XLSX.utils.book_append_sheet(wb,ws5,"Morosos");
+  }
+
+  // ── HOJA 6: RESUMEN ──
+  const totalPendiente=activos.reduce((s,c)=>s+c.saldoPendiente,0);
+  const gananciaReal=creditos.reduce((s,c)=>s+(c.ganancia/c.cuotas)*c.cuotasPagadas,0);
+  const wsResumen=XLSX.utils.aoa_to_sheet([
+    ["RESUMEN CONTROLCREDIT",`Backup ${fecha}`],
+    [""],
+    ["MÉTRICA","VALOR"],
+    ["Créditos activos",activos.length],
+    ["Clientes morosos",morosos.length],
+    ["Saldo total pendiente",totalPendiente],
+    ["Ganancia realizada",gananciaReal],
+    ["Ventas financiadas activas",prodActivos.length],
+    ["Ventas de contado",ventasContado.length],
+  ]);
+  wsResumen["!cols"]=[{wch:30},{wch:20}];
+  XLSX.utils.book_append_sheet(wb,wsResumen,"Resumen");
+
+  // Descargar el Excel
+  const nombreArchivo=`ControlCredit_Backup_${fecha.replace(/\//g,"-")}.xlsx`;
+  XLSX.writeFile(wb,nombreArchivo);
+
+  // Abrir Gmail
+  const asunto=encodeURIComponent(`ControlCredit — Backup ${fecha}`);
+  const cuerpo=encodeURIComponent(`Backup ControlCredit — ${fecha}\n\nCréditos activos: ${activos.length}\nMorosos: ${morosos.length}\nSaldo pendiente: ${fmt(totalPendiente)}\nGanancia realizada: ${fmt(gananciaReal)}\n\nAdjuntá el archivo ${nombreArchivo} descargado.\n\n— ControlCredit`);
+  setTimeout(()=>window.open(`https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(emailDestino)}&su=${asunto}&body=${cuerpo}`,"_blank"),1000);
+};
 
   let csv="";
 
@@ -1310,7 +1401,8 @@ const Dashboard=({clients,creditos,setCreditos,productos,ventasContado=[],t})=>{
   // Moroso: más de 15 días sin pagar
   // Un cliente aparece UNA SOLA VEZ aunque tenga varias cuotas vencidas
   // Si ya pagó todas las cuotas del período → no aparece
-  const [mensajeEditando,setMensajeEditando]=useState(null); // clienteId del que está editando
+  const [mensajeEditando,setMensajeEditando]=useState(null);
+  const [showCobros,setShowCobros]=useState(false); // clienteId del que está editando
   const [mensajeTexto,setMensajeTexto]=useState({});
   const getMensaje=(c,clienteInfo)=>{
     const nombre=clienteInfo?.nombre||c.clienteNombre?.split(" ")[0]||"cliente";
@@ -1549,10 +1641,12 @@ const Dashboard=({clients,creditos,setCreditos,productos,ventasContado=[],t})=>{
               <div style={{fontSize:20,fontWeight:900,color:t.text}}>{fmt(flujoTotal)}</div>
               <div style={{fontSize:11,color:t.sub,marginTop:2}}>Capital + intereses totales</div>
             </div>
-            <div style={{background:"#10b98118",borderRadius:12,padding:"14px 18px",border:"1px solid #10b98130"}}>
-              <div style={{fontSize:10,color:"#10b981",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Ya cobrado</div>
+            <div onClick={()=>setShowCobros(true)} style={{background:"#10b98118",borderRadius:12,padding:"14px 18px",border:"1px solid #10b98130",cursor:"pointer",transition:"all 0.15s"}}
+              onMouseEnter={e=>e.currentTarget.style.background="#10b98128"}
+              onMouseLeave={e=>e.currentTarget.style.background="#10b98118"}>
+              <div style={{fontSize:10,color:"#10b981",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Ya cobrado 👆</div>
               <div style={{fontSize:20,fontWeight:900,color:"#10b981"}}>{fmt(totalCobradoReal)}</div>
-              <div style={{fontSize:11,color:t.sub,marginTop:2}}>Dinero que ya tenés en mano</div>
+              <div style={{fontSize:11,color:t.sub,marginTop:2}}>Tocá para ver historial</div>
             </div>
             <div style={{background:"#ef444418",borderRadius:12,padding:"14px 18px",border:"1px solid #ef444430"}}>
               <div style={{fontSize:10,color:"#ef4444",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Pendiente de cobrar</div>
@@ -1576,8 +1670,121 @@ const Dashboard=({clients,creditos,setCreditos,productos,ventasContado=[],t})=>{
         </div>
       )}
 
-      {/* PAGOS */}
-      {creditos.length>0&&(
+      {/* PANEL HISTORIAL DE COBROS */}
+      {showCobros&&(
+        <div style={{position:"fixed",inset:0,zIndex:500,display:"flex",alignItems:"stretch"}}>
+          <div onClick={()=>setShowCobros(false)} style={{flex:1,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(3px)",cursor:"pointer"}}/>
+          <div style={{width:"min(580px,95vw)",background:t.bg,overflowY:"auto",boxShadow:"-8px 0 40px rgba(0,0,0,0.35)",display:"flex",flexDirection:"column"}}>
+            {/* Header */}
+            <div style={{background:t.card,borderBottom:`1px solid ${t.border}`,padding:"18px 22px",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,zIndex:10}}>
+              <div>
+                <div style={{fontSize:17,fontWeight:800,color:t.text}}>💰 Historial de cobros</div>
+                <div style={{fontSize:12,color:t.sub,marginTop:2}}>Total cobrado: <strong style={{color:"#10b981"}}>{fmt(totalCobradoReal)}</strong></div>
+              </div>
+              <button onClick={()=>setShowCobros(false)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:8,padding:"6px 14px",cursor:"pointer",color:t.sub,fontSize:13,fontWeight:600}}>✕ Cerrar</button>
+            </div>
+            <div style={{padding:"18px",flex:1}}>
+              {(()=>{
+                // Recopilar todos los pagos de todos los créditos
+                const pagos=[];
+                creditos.forEach(c=>{
+                  (c.detalleCuotas||[]).forEach(d=>{
+                    if(d.estado==="Pagada"&&d.montoPagado>0){
+                      pagos.push({
+                        cliente:c.clienteNombre,
+                        tipo:"Crédito",
+                        cuota:d.num,
+                        monto:d.montoPagado,
+                        fechaPago:d.fechaPago||"—",
+                        fechaVenc:d.fechaVenc,
+                        anticipo:d.valorCuotaEditado&&d.montoPagado<(d.valorCuotaEditado||c.valorCuota),
+                        mora:d.valorCuotaEditado&&d.montoPagado>(c.valorCuota),
+                      });
+                    }
+                  });
+                });
+                productos.forEach(p=>{
+                  (p.detalleCuotas||[]).forEach(d=>{
+                    if(d.estado==="Pagada"&&d.montoPagado>0){
+                      pagos.push({
+                        cliente:p.clienteNombre,
+                        tipo:"Venta",
+                        cuota:d.num,
+                        monto:d.montoPagado,
+                        fechaPago:d.fechaPago||"—",
+                        fechaVenc:d.fechaVenc,
+                        anticipo:false,mora:false,
+                      });
+                    }
+                  });
+                });
+                ventasContado.forEach(v=>{
+                  pagos.push({
+                    cliente:v.cliente_nombre||"—",
+                    tipo:"Contado",
+                    cuota:null,
+                    monto:v.precio_venta,
+                    fechaPago:fmtFecha(v.fecha),
+                    fechaVenc:null,
+                    anticipo:false,mora:false,
+                    producto:v.producto,
+                  });
+                });
+
+                // Ordenar por fecha de pago más reciente
+                pagos.sort((a,b)=>{
+                  const fa=a.fechaPago&&a.fechaPago!=="—"?a.fechaPago.split("/").reverse().join("-"):"";
+                  const fb=b.fechaPago&&b.fechaPago!=="—"?b.fechaPago.split("/").reverse().join("-"):"";
+                  return fb.localeCompare(fa);
+                });
+
+                if(pagos.length===0)return(
+                  <div style={{textAlign:"center",padding:"60px 0",color:t.sub}}>
+                    <div style={{fontSize:40,marginBottom:12}}>💸</div>
+                    <div style={{fontSize:14}}>No hay cobros registrados todavía</div>
+                  </div>
+                );
+
+                // Agrupar por fecha
+                const porFecha={};
+                pagos.forEach(p=>{
+                  const key=p.fechaPago||"Sin fecha";
+                  if(!porFecha[key])porFecha[key]=[];
+                  porFecha[key].push(p);
+                });
+
+                return Object.entries(porFecha).map(([fecha,ps])=>(
+                  <div key={fecha} style={{marginBottom:20}}>
+                    <div style={{fontSize:11,fontWeight:700,color:t.sub,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span>📅 {fecha}</span>
+                      <span style={{color:"#10b981",fontWeight:800}}>{fmt(ps.reduce((s,p)=>s+p.monto,0))}</span>
+                    </div>
+                    <div style={{display:"grid",gap:8}}>
+                      {ps.map((p,i)=>(
+                        <div key={i} style={{background:t.card,borderRadius:10,padding:"12px 16px",border:`1px solid ${t.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                          <div>
+                            <div style={{fontWeight:700,color:t.text,fontSize:13}}>{p.cliente}</div>
+                            <div style={{fontSize:11,color:t.sub,marginTop:2,display:"flex",gap:8,flexWrap:"wrap"}}>
+                              <span style={{background:p.tipo==="Crédito"?"#dbeafe":p.tipo==="Venta"?"#d1fae5":"#fef3c7",color:p.tipo==="Crédito"?"#1e40af":p.tipo==="Venta"?"#065f46":"#92400e",padding:"1px 7px",borderRadius:20,fontWeight:600,fontSize:10}}>{p.tipo}</span>
+                              {p.cuota&&<span>Cuota {p.cuota}</span>}
+                              {p.producto&&<span>{p.producto}</span>}
+                              {p.anticipo&&<span style={{color:"#8b5cf6",fontWeight:600}}>🎁 Con descuento</span>}
+                              {p.mora&&<span style={{color:"#f59e0b",fontWeight:600}}>⚠️ Con mora</span>}
+                            </div>
+                          </div>
+                          <div style={{textAlign:"right"}}>
+                            <div style={{fontSize:16,fontWeight:900,color:"#10b981"}}>{fmt(p.monto)}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
         <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,marginBottom:20,overflow:"hidden"}}>
           <div style={{padding:"18px 22px 0"}}>
             <h3 style={{margin:"0 0 14px",fontSize:16,fontWeight:800,color:t.text}}>💳 Pagos</h3>

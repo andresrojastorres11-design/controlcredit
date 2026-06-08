@@ -1,5 +1,6 @@
 // Este archivo reemplaza el contenido de src/App.js
 // Supabase ya está integrado - los datos se guardan en la nube
+/* eslint-disable no-restricted-globals */
 
 import { useState, useEffect, useRef } from "react";
 import React from "react";
@@ -867,7 +868,7 @@ const TablaCuotas=({credito,onActualizar,t})=>{
                         );
                       })()}
                       {d.estado==="Pagada"&&<button onClick={()=>{
-                        if(!confirm("¿Restablecer esta cuota a pendiente?"))return;
+                        if(!window.confirm("¿Restablecer esta cuota a pendiente?"))return;
                         const nuevos=[...detalles];
                         nuevos[i]={...nuevos[i],montoPagado:0,estado:"Pendiente",fechaPago:null};
                         const totalCobrado=Math.max(0,nuevos.reduce((s,x)=>s+x.montoPagado,0));
@@ -1111,7 +1112,7 @@ const AdminUsuarios=({t,allClients,allCreditos,allProductos,allVentasContado})=>
   };
 
   const del=async(id)=>{
-    if(confirm("¿Eliminar usuario?")){ await sb.from("usuarios").delete().eq("id",id); setUsuarios(us=>us.filter(u=>u.id!==id)); }
+    if(window.confirm("¿Eliminar usuario?")){ await sb.from("usuarios").delete().eq("id",id); setUsuarios(us=>us.filter(u=>u.id!==id)); }
   };
 
   const getMetricas=(uid)=>{
@@ -1772,7 +1773,7 @@ const Dashboard=({clients,creditos,setCreditos,productos,ventasContado=[],t})=>{
                           {/* BOTÓN COBRADO — paga la próxima cuota con 1 clic */}
                           <button onClick={async e=>{
                             e.stopPropagation();
-                            if(!confirm(`¿Marcar cuota de ${fmt(c.proxCuota?.valorCuotaEditado||c.valorCuota)} como pagada?`))return;
+                            if(!window.confirm(`¿Marcar cuota de ${fmt(c.proxCuota?.valorCuotaEditado||c.valorCuota)} como pagada?`))return;
                             const det=[...(c.detalleCuotas||[])];
                             const idx=det.findIndex(d=>d.estado==="Pendiente"||d.estado==="Parcial");
                             if(idx===-1)return;
@@ -1947,7 +1948,7 @@ Si no encontrás algún dato dejalo vacío. El DNI son solo los números sin pun
 
   const del=async(id,e)=>{
     e.stopPropagation();
-    if(confirm("¿Eliminar cliente?")) {
+    if(window.confirm("¿Eliminar cliente?")) {
       await sb.from("clientes").delete().eq("id",id);
       setClients(cs=>cs.filter(c=>c.id!==id));
     }
@@ -2131,7 +2132,7 @@ const Creditos=({creditos,setCreditos,clients,usuarioActual,soloVer=false,t})=>{
   };
 
   const eliminar=async(id)=>{
-    if(confirm("¿Eliminar este crédito? Se guardará en la papelera por 24 horas.")){
+    if(window.confirm("¿Eliminar este crédito? Se guardará en la papelera por 24 horas.")){
       const credito=creditos.find(c=>c.id===id);
       if(credito){
         // Guardar en papelera antes de eliminar
@@ -2297,7 +2298,7 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
   };
 
   const delContado=async(id)=>{
-    if(confirm("¿Eliminar esta venta?")){ await sb.from("ventas_contado").delete().eq("id",id); setVentasContado(vs=>vs.filter(v=>v.id!==id)); }
+    if(window.confirm("¿Eliminar esta venta?")){ await sb.from("ventas_contado").delete().eq("id",id); setVentasContado(vs=>vs.filter(v=>v.id!==id)); }
   };
 
   const save=async()=>{
@@ -2314,7 +2315,7 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
   };
 
   const del=async(id)=>{
-    if(confirm("¿Eliminar esta venta? Se guardará en la papelera por 24 horas.")){
+    if(window.confirm("¿Eliminar esta venta? Se guardará en la papelera por 24 horas.")){
       const producto=productos.find(p=>p.id===id);
       if(producto) await sb.from("papelera").insert({tipo:"producto",datos:producto,eliminado_por:usuarioActual?.nombre||"admin"});
       await sb.from("productos").delete().eq("id",id);
@@ -2884,7 +2885,7 @@ const Papelera=({setCreditos,setProductos,t})=>{
   };
 
   const eliminarDef=async(id)=>{
-    if(confirm("Eliminar definitivamente?")){ await sb.from("papelera").delete().eq("id",id); setItems(is=>is.filter(i=>i.id!==id)); }
+    if(window.confirm("Eliminar definitivamente?")){ await sb.from("papelera").delete().eq("id",id); setItems(is=>is.filter(i=>i.id!==id)); }
   };
 
   const tiempoRestante=(createdAt)=>{

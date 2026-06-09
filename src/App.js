@@ -1263,331 +1263,6 @@ const AdminUsuarios=({t,allClients,allCreditos,allProductos,allVentasContado})=>
     </div>
   );
 };
-// ── FLUJO DE CAJA DEL MES ─────────────────────────────────────────────────────
-const FlujoCajaDelMes=({creditos,productos,ventasContado,clients,t})=>{
-  const hoy=new Date();
-  const anio=hoy.getFullYear();
-  const mes=hoy.getMonth()+1;
-  const fechaDesde=`${anio}-${String(mes).padStart(2,"0")}-01`;
-  const ultimoDia=new Date(anio,mes,0).getDate();
-  const fechaHasta=`${anio}-${String(mes).padStart(2,"0")}-${ultimoDia}`;
-  const nombreMes=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"][mes-1];
-  const [panelAbierto,setPanelAbierto]=useState(null); // "cred"|"prod"|"mora"
-
-  // ── Cuotas de créditos del mes ──
-  const detalleCred=creditos.filter(c=>c.estado!=="Finalizado").flatMap(c=>
-    (c.detalleCuotas||[])
-      .filter(d=>d.fechaVenc>=fechaDesde&&d.fechaVenc<=fechaHasta)
-      .map(d=>({clienteNombre:c.clienteNombre,clienteId:c.clienteId,cuotaNum:d.num,fechaVenc:d.fechaVenc,valorReal:d.valorCuotaEditado||c.valorCuota,montoPagado:d.montoPagado,estado:d.estado,creditoId:c.id}))
-  );
-
-  // ── Cuotas de ventas financiadas del mes ──
-  const detalleProd=productos.filter(p=>p.estado!=="Finalizado").flatMap(p=>
-    (p.detalleCuotas||[])
-      .filter(d=>d.fechaVenc>=fechaDesde&&d.fechaVenc<=fechaHasta)
-      .map(d=>({clienteNombre:p.clienteNombre,producto:p.producto,cuotaNum:d.num,fechaVenc:d.fechaVenc,valorReal:d.valorCuotaEditado||p.valorCuota,montoPagado:d.montoPagado,estado:d.estado}))
-  );
-
-  // ── Ventas de contado del mes ──
-  const ventasMes=(ventasContado||[]).filter(v=>v.fecha>=fechaDesde&&v.fecha<=fechaHasta);
-
-  const proyectadoCred=detalleCred.reduce((s,d)=>s+(d.valorReal||0),0);
-  const proyectadoProd=detalleProd.reduce((s,d)=>s+(d.valorReal||0),0);
-  const proyectadoContado=ventasMes.reduce((s,v)=>s+(v.precio_venta||0),0);
-  const totalProyectado=proyectadoCred+proyectadoProd+proyectadoContado;
-
-  const cobradoCred=detalleCred.reduce((s,d)=>s+(d.montoPagado||0),0);
-  const cobradoProd=detalleProd.reduce((s,d)=>s+(d.montoPagado||0),0);
-  const totalCobrado=cobradoCred+cobradoProd+proyectadoContado;
-
-  const pendiente=Math.max(0,totalProyectado-totalCobrado);
-  const pct=totalProyectado>0?Math.round((totalCobrado/totalProyectado)*100):0;
-  const colorBarra=pct>=75?t.accent2:pct>=40?t.warning:t.danger;
-
-  // ── MORA: créditos con cuotas vencidas sin pagar ──
-  const hoyDate=new Date(); hoyDate.setHours(0,0,0,0);
-  const creditosMorosos=creditos.filter(c=>c.estado!=="Finalizado").map(c=>{
-    const cuotasVencidas=(c.detalleCuotas||[]).filter(d=>
-      (d.estado==="Pendiente"||d.estado==="Parcial")&&d.fechaVenc&&new Date(d.fechaVenc)<hoyDate
-    );
-    const montoMora=cuotasVencidas.reduce((s,d)=>{
-      const vc=d.valorCuotaEditado||c.valorCuota;
-      return s+Math.max(0,vc-d.montoPagado);
-    },0);
-    const diasMaxAtraso=cuotasVencidas.length>0?Math.round((hoyDate-new Date(cuotasVencidas[0].fechaVenc))/(1000*60*60*24)):0;
-    return{...c,cuotasVencidas,montoMora,diasMaxAtraso};
-  }).filter(c=>c.montoMora>0).sort((a,b)=>b.montoMora-a.montoMora);
-
-  const totalMora=creditosMorosos.reduce((s,c)=>s+c.montoMora,0);
-
-  const filas=[
-    {id:"cred",label:"Cuotas de créditos",icon:"💳",proyectado:proyectadoCred,cobrado:cobradoCred},
-    {id:"prod",label:"Ventas financiadas",icon:"🛒",proyectado:proyectadoProd,cobrado:cobradoProd},
-    {id:"contado",label:"Ventas de contado",icon:"💵",proyectado:proyectadoContado,cobrado:proyectadoContado,noClick:true},
-  ].filter(f=>f.proyectado>0);
-
-  const PanelDetalle=({tipo})=>{
-    if(tipo==="cred"){
-      // Agrupar por cliente
-      const porCliente={};
-      detalleCred.forEach(d=>{
-        if(!porCliente[d.clienteNombre])porCliente[d.clienteNombre]={clienteNombre:d.clienteNombre,cuotas:[],totalProyectado:0,totalCobrado:0};
-        porCliente[d.clienteNombre].cuotas.push(d);
-        porCliente[d.clienteNombre].totalProyectado+=d.valorReal;
-        porCliente[d.clienteNombre].totalCobrado+=d.montoPagado;
-      });
-      const lista=Object.values(porCliente).sort((a,b)=>b.totalProyectado-a.totalProyectado);
-      return(
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {lista.length===0&&<div style={{textAlign:"center",padding:"20px",color:t.sub,fontSize:12}}>Sin cuotas de créditos este mes</div>}
-          {lista.map(cl=>{
-            const pendCl=Math.max(0,cl.totalProyectado-cl.totalCobrado);
-            const pctCl=cl.totalProyectado>0?Math.round((cl.totalCobrado/cl.totalProyectado)*100):0;
-            const clienteInfo=clients?.find(c=>c.nombre+" "+c.apellido===cl.clienteNombre);
-            return(
-              <div key={cl.clienteNombre} style={{background:t.bg,borderRadius:10,padding:"12px 14px",border:`1px solid ${t.border}`}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-                  <div>
-                    <div style={{fontWeight:700,color:t.text,fontSize:13}}>{cl.clienteNombre}</div>
-                    <div style={{fontSize:11,color:t.sub,marginTop:2}}>{cl.cuotas.length} cuota{cl.cuotas.length!==1?"s":""} · vencen en {nombreMes}</div>
-                  </div>
-                  <div style={{textAlign:"right"}}>
-                    <div style={{fontSize:13,fontWeight:800,color:t.text}}>{fmt(cl.totalProyectado)}</div>
-                    <div style={{fontSize:10,color:t.sub}}>a cobrar</div>
-                  </div>
-                </div>
-                <div style={{display:"flex",gap:12,marginBottom:6,fontSize:11,flexWrap:"wrap"}}>
-                  <span style={{color:t.accent2,fontWeight:600}}>✓ Cobrado: {fmt(cl.totalCobrado)}</span>
-                  {pendCl>0&&<span style={{color:t.danger,fontWeight:600}}>Pendiente: {fmt(pendCl)}</span>}
-                  {clienteInfo?.tel&&(
-                    <a href={`https://wa.me/54${clienteInfo.tel.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer"
-                      style={{display:"flex",alignItems:"center",gap:3,color:"#25D366",fontWeight:600,textDecoration:"none"}}>
-                      <Icon name="whatsapp" size={11}/>WA
-                    </a>
-                  )}
-                </div>
-                <div style={{background:t.border,borderRadius:999,height:4}}>
-                  <div style={{height:"100%",borderRadius:999,width:`${pctCl}%`,background:pctCl>=100?t.accent2:pctCl>=50?t.accent:t.danger}}/>
-                </div>
-                {/* Detalle cuotas */}
-                <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:3}}>
-                  {cl.cuotas.map((d,i)=>(
-                    <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 8px",background:d.estado==="Pagada"?"#10b98110":d.estado==="Parcial"?"#f59e0b10":"#ef444408",borderRadius:6}}>
-                      <span style={{fontSize:11,color:t.sub}}>Cuota {d.cuotaNum} · {fmtFecha(d.fechaVenc)}</span>
-                      <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                        <span style={{fontSize:11,fontWeight:700,color:t.text}}>{fmt(d.valorReal)}</span>
-                        <span style={{fontSize:10,fontWeight:600,color:d.estado==="Pagada"?t.accent2:d.estado==="Parcial"?t.warning:t.sub}}>{d.estado}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      );
-    }
-    if(tipo==="prod"){
-      const porCliente={};
-      detalleProd.forEach(d=>{
-        const key=d.clienteNombre+"|"+d.producto;
-        if(!porCliente[key])porCliente[key]={clienteNombre:d.clienteNombre,producto:d.producto,cuotas:[],totalProyectado:0,totalCobrado:0};
-        porCliente[key].cuotas.push(d);
-        porCliente[key].totalProyectado+=d.valorReal;
-        porCliente[key].totalCobrado+=d.montoPagado;
-      });
-      const lista=Object.values(porCliente).sort((a,b)=>b.totalProyectado-a.totalProyectado);
-      return(
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {lista.length===0&&<div style={{textAlign:"center",padding:"20px",color:t.sub,fontSize:12}}>Sin cuotas de ventas financiadas este mes</div>}
-          {lista.map((cl,idx)=>{
-            const pendCl=Math.max(0,cl.totalProyectado-cl.totalCobrado);
-            const pctCl=cl.totalProyectado>0?Math.round((cl.totalCobrado/cl.totalProyectado)*100):0;
-            return(
-              <div key={idx} style={{background:t.bg,borderRadius:10,padding:"12px 14px",border:`1px solid ${t.border}`}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
-                  <div>
-                    <div style={{fontWeight:700,color:t.text,fontSize:13}}>{cl.clienteNombre}</div>
-                    <div style={{fontSize:11,color:t.sub}}>{cl.producto} · {cl.cuotas.length} cuota{cl.cuotas.length!==1?"s":""}</div>
-                  </div>
-                  <div style={{textAlign:"right"}}>
-                    <div style={{fontSize:13,fontWeight:800,color:t.text}}>{fmt(cl.totalProyectado)}</div>
-                    {pendCl>0&&<div style={{fontSize:10,color:t.danger}}>Pendiente: {fmt(pendCl)}</div>}
-                  </div>
-                </div>
-                <div style={{background:t.border,borderRadius:999,height:4}}>
-                  <div style={{height:"100%",borderRadius:999,width:`${pctCl}%`,background:pctCl>=100?t.accent2:pctCl>=50?t.accent:t.danger}}/>
-                </div>
-                <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:3}}>
-                  {cl.cuotas.map((d,i)=>(
-                    <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 8px",background:d.estado==="Pagada"?"#10b98110":d.estado==="Parcial"?"#f59e0b10":"#ef444408",borderRadius:6}}>
-                      <span style={{fontSize:11,color:t.sub}}>Cuota {d.cuotaNum} · {fmtFecha(d.fechaVenc)}</span>
-                      <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                        <span style={{fontSize:11,fontWeight:700,color:t.text}}>{fmt(d.valorReal)}</span>
-                        <span style={{fontSize:10,fontWeight:600,color:d.estado==="Pagada"?t.accent2:d.estado==="Parcial"?t.warning:t.sub}}>{d.estado}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      );
-    }
-    if(tipo==="mora"){
-      return(
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {creditosMorosos.length===0&&<div style={{textAlign:"center",padding:"20px",color:t.sub,fontSize:12}}>Sin mora — todos al día 🎉</div>}
-          {creditosMorosos.map(c=>{
-            const clienteInfo=clients?.find(cl=>cl.id===c.clienteId);
-            return(
-              <div key={c.id} style={{background:t.bg,borderRadius:10,padding:"12px 14px",border:"1px solid #ef444430"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
-                  <div>
-                    <div style={{fontWeight:700,color:t.text,fontSize:13}}>{c.clienteNombre}</div>
-                    <div style={{fontSize:11,color:t.sub,marginTop:2}}>
-                      {c.cuotasVencidas.length} cuota{c.cuotasVencidas.length!==1?"s":""} vencida{c.cuotasVencidas.length!==1?"s":""}
-                      {c.diasMaxAtraso>0&&<span style={{color:t.danger,fontWeight:600}}> · {c.diasMaxAtraso} días de atraso</span>}
-                    </div>
-                  </div>
-                  <div style={{textAlign:"right"}}>
-                    <div style={{fontSize:14,fontWeight:900,color:t.danger}}>{fmt(c.montoMora)}</div>
-                    <div style={{fontSize:10,color:t.sub}}>en mora</div>
-                  </div>
-                </div>
-                {clienteInfo?.tel&&(
-                  <a href={`https://wa.me/54${clienteInfo.tel.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer"
-                    style={{display:"inline-flex",alignItems:"center",gap:5,background:"#25D366",color:"#fff",borderRadius:7,padding:"5px 10px",fontSize:11,fontWeight:700,textDecoration:"none",marginBottom:8}}>
-                    <Icon name="whatsapp" size={12}/>Contactar por WhatsApp
-                  </a>
-                )}
-                <div style={{display:"flex",flexDirection:"column",gap:3,marginTop:4}}>
-                  {c.cuotasVencidas.map((d,i)=>{
-                    const vc=d.valorCuotaEditado||c.valorCuota;
-                    const saldo=Math.max(0,vc-d.montoPagado);
-                    return(
-                      <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 8px",background:"#ef444410",borderRadius:6}}>
-                        <span style={{fontSize:11,color:t.sub}}>Cuota {d.num} · {fmtFecha(d.fechaVenc)}</span>
-                        <span style={{fontSize:11,fontWeight:700,color:t.danger}}>{fmt(saldo)} pendiente</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      );
-    }
-    return null;
-  };
-
-  return(
-    <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"20px 24px",marginBottom:20}}>
-      {/* Header */}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:8}}>
-        <div>
-          <div style={{fontSize:11,fontWeight:700,color:t.sub,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:3}}>💰 Flujo proyectado — {nombreMes} {anio}</div>
-          <div style={{fontSize:11,color:t.sub}}>01/{String(mes).padStart(2,"0")}/{anio} — {ultimoDia}/{String(mes).padStart(2,"0")}/{anio}</div>
-        </div>
-        <div style={{textAlign:"right"}}>
-          <div style={{fontSize:22,fontWeight:900,color:t.text}}>{fmt(totalProyectado)}</div>
-          <div style={{fontSize:11,color:t.sub}}>total esperado en {nombreMes}</div>
-        </div>
-      </div>
-
-      {/* Barra principal */}
-      <div style={{marginBottom:16}}>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
-          <span style={{fontSize:12,color:t.sub}}>Cobrado: <strong style={{color:colorBarra}}>{fmt(totalCobrado)}</strong></span>
-          <span style={{fontSize:12,color:t.sub}}>Pendiente: <strong style={{color:t.danger}}>{fmt(pendiente)}</strong></span>
-        </div>
-        <div style={{background:t.border,borderRadius:999,height:10,overflow:"hidden"}}>
-          <div style={{height:"100%",borderRadius:999,width:`${pct}%`,background:`linear-gradient(90deg,${colorBarra},${colorBarra}cc)`,transition:"width 0.6s ease",minWidth:pct>0?6:0}}/>
-        </div>
-        <div style={{textAlign:"right",marginTop:4,fontSize:12,fontWeight:700,color:colorBarra}}>{pct}% cobrado</div>
-      </div>
-
-      {/* Filas clickeables */}
-      {filas.length>0&&(
-        <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:totalMora>0?12:0}}>
-          {filas.map(f=>{
-            const fp=f.proyectado>0?Math.round((f.cobrado/f.proyectado)*100):0;
-            const abierto=panelAbierto===f.id;
-            return(
-              <div key={f.id}>
-                <div onClick={()=>!f.noClick&&setPanelAbierto(abierto?null:f.id)}
-                  style={{background:abierto?`${t.accent}10`:t.bg,borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"center",gap:12,cursor:f.noClick?"default":"pointer",border:`1px solid ${abierto?t.accent:t.border}`,transition:"all 0.15s"}}
-                  onMouseEnter={e=>{if(!f.noClick)e.currentTarget.style.background=`${t.accent}10`}}
-                  onMouseLeave={e=>{if(!f.noClick&&!abierto)e.currentTarget.style.background=t.bg}}>
-                  <span style={{fontSize:18}}>{f.icon}</span>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                      <span style={{fontSize:12,color:t.text,fontWeight:600}}>{f.label}</span>
-                      <span style={{fontSize:11,color:t.sub}}>{fmt(f.cobrado)} / {fmt(f.proyectado)}</span>
-                    </div>
-                    <div style={{background:t.border,borderRadius:999,height:5}}>
-                      <div style={{height:"100%",borderRadius:999,width:`${fp}%`,background:fp>=75?t.accent2:fp>=40?t.warning:t.danger,minWidth:fp>0?4:0}}/>
-                    </div>
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <span style={{fontSize:11,fontWeight:700,minWidth:34,textAlign:"right",color:fp>=75?t.accent2:fp>=40?t.warning:t.danger}}>{fp}%</span>
-                    {!f.noClick&&<span style={{fontSize:10,color:t.sub}}>{abierto?"▲":"▼"}</span>}
-                  </div>
-                </div>
-                {/* Panel desplegable */}
-                {abierto&&(
-                  <div style={{background:t.bg,borderRadius:"0 0 10px 10px",border:`1px solid ${t.accent}`,borderTop:"none",padding:"14px",maxHeight:400,overflowY:"auto"}}>
-                    <div style={{fontSize:10,fontWeight:700,color:t.sub,textTransform:"uppercase",marginBottom:10}}>
-                      Detalle de {f.label.toLowerCase()} — {nombreMes}
-                    </div>
-                    <PanelDetalle tipo={f.id}/>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* SECCIÓN MORA */}
-      <div>
-        <div onClick={()=>setPanelAbierto(panelAbierto==="mora"?null:"mora")}
-          style={{background:panelAbierto==="mora"?"#ef444415":totalMora>0?"#ef444408":t.bg,borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",gap:12,cursor:"pointer",border:`1px solid ${panelAbierto==="mora"?"#ef4444":totalMora>0?"#ef444430":t.border}`,transition:"all 0.15s"}}
-          onMouseEnter={e=>e.currentTarget.style.background="#ef444415"}
-          onMouseLeave={e=>{if(panelAbierto!=="mora")e.currentTarget.style.background=totalMora>0?"#ef444408":t.bg}}>
-          <span style={{fontSize:18}}>⚠️</span>
-          <div style={{flex:1}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontSize:12,color:totalMora>0?t.danger:t.sub,fontWeight:700}}>Plata en mora</span>
-              <span style={{fontSize:14,fontWeight:900,color:totalMora>0?t.danger:t.sub}}>{fmt(totalMora)}</span>
-            </div>
-            <div style={{fontSize:11,color:t.sub,marginTop:2}}>
-              {creditosMorosos.length>0
-                ?`${creditosMorosos.length} cliente${creditosMorosos.length!==1?"s":""} con cuotas vencidas sin pagar`
-                :"Sin mora — todos al día 🎉"}
-            </div>
-          </div>
-          <span style={{fontSize:10,color:t.sub}}>{panelAbierto==="mora"?"▲":"▼"}</span>
-        </div>
-        {panelAbierto==="mora"&&(
-          <div style={{background:t.bg,borderRadius:"0 0 10px 10px",border:"1px solid #ef4444",borderTop:"none",padding:"14px",maxHeight:400,overflowY:"auto"}}>
-            <div style={{fontSize:10,fontWeight:700,color:t.danger,textTransform:"uppercase",marginBottom:10}}>
-              Clientes con mora — {creditosMorosos.length} cliente{creditosMorosos.length!==1?"s":""}
-            </div>
-            <PanelDetalle tipo="mora"/>
-          </div>
-        )}
-      </div>
-
-      {totalProyectado===0&&(
-        <div style={{textAlign:"center",color:t.sub,fontSize:12,padding:"8px 0",marginTop:8}}>Sin movimientos proyectados para {nombreMes}</div>
-      )}
-    </div>
-  );
-};
-
 const Dashboard=({clients,creditos,setCreditos,productos,ventasContado=[],t})=>{
   const hoy=new Date();hoy.setHours(0,0,0,0);
   const [mesPDF,setMesPDF]=useState(hoy.getMonth()+1);
@@ -1891,9 +1566,6 @@ const Dashboard=({clients,creditos,setCreditos,productos,ventasContado=[],t})=>{
           </div>
         )}
       </div>
-
-      {/* FLUJO DE CAJA DEL MES — PROYECTADO */}
-      <FlujoCajaDelMes creditos={creditos} productos={productos} ventasContado={ventasContado} clients={clients} t={t}/>
 
       {/* FLUJO DE EFECTIVO */}
       {creditos.length>0&&(
@@ -2979,6 +2651,13 @@ const Presupuesto=({t})=>{
   const [frecuencia,setFrecuencia]=useState("Semanal");
   const [tipo,setTipo]=useState("Crédito");
 
+  // ── PRESUPUESTOS GUARDADOS ──
+  const [guardados,setGuardados]=useState(()=>{
+    try{return JSON.parse(localStorage.getItem("cc_presupuestos")||"[]");}catch{return[];}
+  });
+  const [nombreGuardar,setNombreGuardar]=useState("");
+  const [guardandoNombre,setGuardandoNombre]=useState(false);
+
   const montoN=+monto||0;
   const pctN=+porcentaje||0;
   const cuotasN=+cuotas||1;
@@ -3126,6 +2805,48 @@ const Presupuesto=({t})=>{
             style={{width:"100%",padding:"13px",borderRadius:10,border:"none",background:"#ef4444",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
             <Icon name="pdf" size={18}/>Generar PDF del presupuesto
           </button>
+
+          {/* GUARDAR PRESUPUESTO */}
+          {montoN>0&&(
+            <div style={{marginTop:12}}>
+              {guardandoNombre?(
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <input value={nombreGuardar} onChange={e=>setNombreGuardar(e.target.value)}
+                    placeholder="Ej: Crédito 100k al 30%"
+                    onKeyDown={e=>{
+                      if(e.key==="Enter"&&nombreGuardar.trim()){
+                        const nuevo={id:Date.now(),nombre:nombreGuardar.trim(),monto,porcentaje,cuotas,frecuencia,tipo,fecha:new Date().toLocaleDateString("es-AR")};
+                        const nuevos=[nuevo,...guardados];
+                        setGuardados(nuevos);
+                        localStorage.setItem("cc_presupuestos",JSON.stringify(nuevos));
+                        setNombreGuardar("");setGuardandoNombre(false);
+                      }
+                    }}
+                    autoFocus
+                    style={{flex:1,padding:"9px 12px",borderRadius:8,border:`1px solid ${t.accent}`,background:t.input,color:t.text,fontSize:13,outline:"none"}}/>
+                  <button onClick={()=>{
+                    if(!nombreGuardar.trim())return;
+                    const nuevo={id:Date.now(),nombre:nombreGuardar.trim(),monto,porcentaje,cuotas,frecuencia,tipo,fecha:new Date().toLocaleDateString("es-AR")};
+                    const nuevos=[nuevo,...guardados];
+                    setGuardados(nuevos);
+                    localStorage.setItem("cc_presupuestos",JSON.stringify(nuevos));
+                    setNombreGuardar("");setGuardandoNombre(false);
+                  }} style={{background:t.accent,color:"#fff",border:"none",borderRadius:8,padding:"9px 14px",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+                    Guardar
+                  </button>
+                  <button onClick={()=>{setGuardandoNombre(false);setNombreGuardar("");}}
+                    style={{background:"none",border:`1px solid ${t.border}`,borderRadius:8,padding:"9px 10px",cursor:"pointer",color:t.sub}}>
+                    <Icon name="close" size={14}/>
+                  </button>
+                </div>
+              ):(
+                <button onClick={()=>setGuardandoNombre(true)}
+                  style={{width:"100%",padding:"10px",borderRadius:10,border:`1px solid ${t.accent}`,background:"transparent",color:t.accent,fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                  💾 Guardar este presupuesto
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* PANEL DERECHO — PREVIEW */}
@@ -3176,6 +2897,77 @@ const Presupuesto=({t})=>{
           )}
         </div>
       </div>
+
+      {/* ── PRESUPUESTOS GUARDADOS ── */}
+      {guardados.length>0&&(
+        <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"22px 24px",marginTop:20}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+            <div>
+              <h3 style={{margin:"0 0 3px",fontSize:16,fontWeight:800,color:t.text}}>💾 Presupuestos guardados</h3>
+              <p style={{margin:0,fontSize:12,color:t.sub}}>Tocá uno para cargarlo y generar el PDF al toque</p>
+            </div>
+            <span style={{background:`${t.accent}15`,color:t.accent,padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:700}}>{guardados.length} guardado{guardados.length!==1?"s":""}</span>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:10}}>
+            {guardados.map(g=>{
+              const gMontoN=+g.monto||0;
+              const gPctN=+g.porcentaje||0;
+              const gCuotasN=+g.cuotas||1;
+              const gTotal=gMontoN+(gMontoN*(gPctN/100));
+              const gCuota=gTotal/gCuotasN;
+              return(
+                <div key={g.id} style={{background:t.bg,borderRadius:10,border:`1px solid ${t.border}`,padding:"14px 16px",display:"flex",flexDirection:"column",gap:10}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                    <div>
+                      <div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:3}}>{g.nombre}</div>
+                      <div style={{fontSize:10,color:t.sub}}>{g.tipo} · {g.fecha}</div>
+                    </div>
+                    <button onClick={()=>{
+                      if(window.confirm(`¿Eliminar "${g.nombre}"?`)){
+                        const nuevos=guardados.filter(x=>x.id!==g.id);
+                        setGuardados(nuevos);
+                        localStorage.setItem("cc_presupuestos",JSON.stringify(nuevos));
+                      }
+                    }} style={{background:"none",border:"none",cursor:"pointer",color:t.sub,padding:2}}><Icon name="trash" size={13}/></button>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,fontSize:11}}>
+                    <div style={{background:t.card,borderRadius:6,padding:"6px 8px",textAlign:"center"}}>
+                      <div style={{color:t.sub,fontSize:9,textTransform:"uppercase",marginBottom:2}}>Monto</div>
+                      <div style={{fontWeight:800,color:t.text}}>{fmt(gMontoN)}</div>
+                    </div>
+                    <div style={{background:t.card,borderRadius:6,padding:"6px 8px",textAlign:"center"}}>
+                      <div style={{color:t.sub,fontSize:9,textTransform:"uppercase",marginBottom:2}}>Interés</div>
+                      <div style={{fontWeight:800,color:t.accent}}>{g.porcentaje}%</div>
+                    </div>
+                    <div style={{background:t.card,borderRadius:6,padding:"6px 8px",textAlign:"center"}}>
+                      <div style={{color:t.sub,fontSize:9,textTransform:"uppercase",marginBottom:2}}>Cuota</div>
+                      <div style={{fontWeight:800,color:"#10b981"}}>{fmt(gCuota)}</div>
+                    </div>
+                  </div>
+                  <div style={{fontSize:11,color:t.sub,textAlign:"center"}}>
+                    {gCuotasN} cuota{gCuotasN!==1?"s":""} {g.frecuencia.toLowerCase()}{gCuotasN!==1?"s":""} · Total: {fmt(gTotal)}
+                  </div>
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={()=>{
+                      setMonto(g.monto);setPorcentaje(g.porcentaje);setCuotas(g.cuotas);
+                      setFrecuencia(g.frecuencia);setTipo(g.tipo);
+                    }} style={{flex:1,background:`${t.accent}15`,color:t.accent,border:`1px solid ${t.accent}30`,borderRadius:8,padding:"8px",fontWeight:700,fontSize:12,cursor:"pointer"}}>
+                      📥 Cargar
+                    </button>
+                    <button onClick={()=>{
+                      setMonto(g.monto);setPorcentaje(g.porcentaje);setCuotas(g.cuotas);
+                      setFrecuencia(g.frecuencia);setTipo(g.tipo);
+                      setTimeout(()=>generarPDF(),100);
+                    }} style={{flex:1,background:"#ef4444",color:"#fff",border:"none",borderRadius:8,padding:"8px",fontWeight:700,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
+                      <Icon name="pdf" size={12}/>PDF directo
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

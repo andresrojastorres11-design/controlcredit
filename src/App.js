@@ -1263,7 +1263,7 @@ const AdminUsuarios=({t,allClients,allCreditos,allProductos,allVentasContado})=>
     </div>
   );
 };
-const Dashboard=({clients,creditos,setCreditos,productos,ventasContado=[],t})=>{
+const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasContado=[],t})=>{
   const hoy=new Date();hoy.setHours(0,0,0,0);
   const [mesPDF,setMesPDF]=useState(hoy.getMonth()+1);
   const [anioPDF,setAnioPDF]=useState(hoy.getFullYear());
@@ -1363,7 +1363,13 @@ const Dashboard=({clients,creditos,setCreditos,productos,ventasContado=[],t})=>{
     setMensajeEditando(null);
   };
 
-  const itemsPagosRaw=activos.map(c=>{
+  // Unificar créditos y ventas financiadas activas para la sección de Pagos
+  const itemsFuentePagos=[
+    ...activos.map(c=>({...c,_tipo:"credito"})),
+    ...productosActivos.map(p=>({...p,monto:p.inversion,totalCobrar:p.precioFinanciado,ganancia:p.ganancia,historial:[],_tipo:"producto",_etiqueta:p.producto})),
+  ];
+
+  const itemsPagosRaw=itemsFuentePagos.map(c=>{
     const det=c.detalleCuotas||[];
     // Cuotas pendientes o parciales ordenadas por fecha
     const pendientes=det.filter(d=>d.estado==="Pendiente"||d.estado==="Parcial").sort((a,b)=>new Date(a.fechaVenc)-new Date(b.fechaVenc));
@@ -1375,25 +1381,18 @@ const Dashboard=({clients,creditos,setCreditos,productos,ventasContado=[],t})=>{
     const diffDias=proxFecha?Math.round((proxFecha-hoy)/(1000*60*60*24)):null;
     if(diffDias===null)return null;
     let cat=null;
-    if(diffDias>=0&&diffDias<=3)cat="aldia";         // hoy o gracia 3 días
-    else if(diffDias<0&&diffDias>=-15)cat="vencido"; // 4-15 días vencida
-    else if(diffDias<-15)cat="moroso";               // más de 15 días → moroso
-    else return null; // más de 3 días futuros → no mostrar
-    // Cuotas vencidas del crédito
+    if(diffDias>=0&&diffDias<=3)cat="aldia";
+    else if(diffDias<0&&diffDias>=-15)cat="vencido";
+    else if(diffDias<-15)cat="moroso";
+    else return null;
     const cuotasVencidas=det.filter(d=>(d.estado==="Pendiente"||d.estado==="Parcial")&&d.fechaVenc&&new Date(d.fechaVenc)<hoy);
     return{...c,proxFecha,diffDias,cat,proxCuota,pendientes,cuotasVencidas};
   }).filter(Boolean);
 
-  // Agrupar por cliente — un cliente aparece una sola vez (el peor estado gana)
+  // Agrupar por cliente+item — cada crédito/venta aparece por separado
+  // La key es única por ítem para no pisar ventas con créditos del mismo cliente
   const catPrioridad={moroso:3,vencido:2,aldia:1};
-  const clientesMap={};
-  itemsPagosRaw.forEach(item=>{
-    const cid=item.clienteId;
-    if(!clientesMap[cid]||catPrioridad[item.cat]>catPrioridad[clientesMap[cid].cat]){
-      clientesMap[cid]=item;
-    }
-  });
-  const itemsPagos=Object.values(clientesMap);
+  const itemsPagos=itemsPagosRaw.sort((a,b)=>catPrioridad[b.cat]-catPrioridad[a.cat]);
   const pagosAlDia=itemsPagos.filter(i=>i.cat==="aldia");
   const pagosPorVencer=itemsPagos.filter(i=>i.cat==="vencido");
   const pagosMorosos=itemsPagos.filter(i=>i.cat==="moroso");
@@ -1751,7 +1750,7 @@ const Dashboard=({clients,creditos,setCreditos,productos,ventasContado=[],t})=>{
                   const diffLabel=c.diffDias===0?"Vence HOY":c.diffDias>0?`Vence en ${c.diffDias} día${c.diffDias!==1?"s":""}`:c.diffDias===-1?"Venció ayer":`Venció hace ${Math.abs(c.diffDias)} días`;
                   const nVencidas=c.cuotasVencidas?.length||0;
                   return(
-                    <div key={c.clienteId} style={{borderRadius:10,border:`1px solid ${tabActiva.border}`,overflow:"hidden"}}>
+                    <div key={`${c._tipo||"credito"}-${c.id}`} style={{borderRadius:10,border:`1px solid ${tabActiva.border}`,overflow:"hidden"}}>
                       <div onClick={()=>setClienteExpandido(abierto?null:c.clienteId)}
                         style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:tabActiva.bg,cursor:"pointer",flexWrap:"wrap",gap:10}}>
                         <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -1761,6 +1760,8 @@ const Dashboard=({clients,creditos,setCreditos,productos,ventasContado=[],t})=>{
                           <div>
                             <div style={{fontWeight:700,color:t.text,fontSize:14,display:"flex",alignItems:"center",gap:8}}>
                               {c.clienteNombre}
+                              {c._tipo==="producto"&&<span style={{fontSize:10,background:"#8b5cf6",color:"#fff",borderRadius:20,padding:"1px 7px",fontWeight:700}}>🛒 {c._etiqueta||"Venta"}</span>}
+                              {(!c._tipo||c._tipo==="credito")&&<span style={{fontSize:10,background:"#3b82f6",color:"#fff",borderRadius:20,padding:"1px 7px",fontWeight:700}}>💳 Crédito</span>}
                               {nVencidas>0&&<span style={{fontSize:10,background:tabActiva.color,color:"#fff",borderRadius:20,padding:"1px 7px",fontWeight:700}}>{nVencidas} vencida{nVencidas!==1?"s":""}</span>}
                             </div>
                             <div style={{fontSize:11,color:t.sub,display:"flex",gap:12,flexWrap:"wrap",marginTop:2}}>
@@ -1772,7 +1773,7 @@ const Dashboard=({clients,creditos,setCreditos,productos,ventasContado=[],t})=>{
                           </div>
                         </div>
                         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                          {/* BOTÓN COBRADO — paga la próxima cuota con 1 clic */}
+                          {/* BOTÓN COBRADO — paga la próxima cuota con 1 clic, funciona para créditos Y productos */}
                           <button onClick={async e=>{
                             e.stopPropagation();
                             if(!window.confirm(`¿Marcar cuota de ${fmt(c.proxCuota?.valorCuotaEditado||c.valorCuota)} como pagada?`))return;
@@ -1787,8 +1788,14 @@ const Dashboard=({clients,creditos,setCreditos,productos,ventasContado=[],t})=>{
                             const pagadas=det.filter(d=>d.estado==="Pagada").length;
                             const prox=det.find(d=>d.estado!=="Pagada");
                             const nuevoEstado=pendiente<=0?"Finalizado":"Al día";
-                            await sb.from("creditos").update({cuotas_pagadas:pagadas,saldo_cobrado:totalCobrado,saldo_pendiente:pendiente,proximo_pago:prox?.fechaVenc||"",estado:nuevoEstado,detalle_cuotas:det,historial:[...c.historial,{tipo:"pago_completo",cuota:idx+1,monto:vc,fecha:new Date().toLocaleDateString("es-AR")}]}).eq("id",c.id);
-                            setCreditos(cs=>cs.map(x=>x.id===c.id?{...x,cuotasPagadas:pagadas,saldoCobrado:totalCobrado,saldoPendiente:pendiente,proximoPago:prox?.fechaVenc||"",estado:nuevoEstado,detalleCuotas:det}:x));
+                            const tabla=c._tipo==="producto"?"productos":"creditos";
+                            const historialActual=c._tipo==="producto"?[]:(c.historial||[]);
+                            await sb.from(tabla).update({cuotas_pagadas:pagadas,saldo_cobrado:totalCobrado,saldo_pendiente:pendiente,proximo_pago:prox?.fechaVenc||"",estado:nuevoEstado,detalle_cuotas:det,...(c._tipo!=="producto"&&{historial:[...historialActual,{tipo:"pago_completo",cuota:idx+1,monto:vc,fecha:new Date().toLocaleDateString("es-AR")}]})}).eq("id",c.id);
+                            if(c._tipo==="producto"){
+                              setProductos(ps=>ps.map(x=>x.id===c.id?{...x,cuotasPagadas:pagadas,saldoCobrado:totalCobrado,saldoPendiente:pendiente,proximoPago:prox?.fechaVenc||"",estado:nuevoEstado,detalleCuotas:det}:x));
+                            } else {
+                              setCreditos(cs=>cs.map(x=>x.id===c.id?{...x,cuotasPagadas:pagadas,saldoCobrado:totalCobrado,saldoPendiente:pendiente,proximoPago:prox?.fechaVenc||"",estado:nuevoEstado,detalleCuotas:det}:x));
+                            }
                           }} style={{background:"#10b981",color:"#fff",border:"none",borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
                             ✓ Cobrado
                           </button>
@@ -3203,7 +3210,7 @@ export default function App(){
 
         {/* Contenido móvil */}
         <main style={{flex:1,padding:"14px 14px 80px",overflowY:"auto"}}>
-          {screen==="dashboard"&&<Dashboard clients={clients} creditos={creditos} setCreditos={setCreditos} productos={productos} ventasContado={ventasContado} t={t}/>}
+          {screen==="dashboard"&&<Dashboard clients={clients} creditos={creditos} setCreditos={setCreditos} productos={productos} setProductos={setProductos} ventasContado={ventasContado} t={t}/>}
           {screen==="clientes"&&<Clientes clients={clients} setClients={setClients} creditos={creditos} setCreditos={setCreditos} productos={productos} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
           {screen==="creditos"&&<Creditos creditos={creditos} setCreditos={setCreditos} clients={clients} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
           {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
@@ -3307,7 +3314,7 @@ export default function App(){
           </div>
         </header>
         <main style={{flex:1,padding:"26px",overflowY:"auto"}}>
-          {screen==="dashboard"&&<Dashboard clients={clients} creditos={creditos} setCreditos={setCreditos} productos={productos} ventasContado={ventasContado} t={t}/>}
+          {screen==="dashboard"&&<Dashboard clients={clients} creditos={creditos} setCreditos={setCreditos} productos={productos} setProductos={setProductos} ventasContado={ventasContado} t={t}/>}
           {screen==="clientes"&&<Clientes clients={clients} setClients={setClients} creditos={creditos} setCreditos={setCreditos} productos={productos} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
           {screen==="creditos"&&<Creditos creditos={creditos} setCreditos={setCreditos} clients={clients} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
           {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}

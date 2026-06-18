@@ -1270,6 +1270,7 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
   const [tabPagos,setTabPagos]=useState("aldia");
   const [clienteExpandido,setClienteExpandido]=useState(null);
   const [editandoMeta,setEditandoMeta]=useState(false);
+  const [ordenRank,setOrdenRank]=useState("ganEsp");
   const [meta,setMeta]=useState({ganancia:"",clientes:""});
   const [metaGuardada,setMetaGuardada]=useState({ganancia:0,clientes:0});
   const [emailBackup,setEmailBackup]=useState("");
@@ -1970,7 +1971,7 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
 
         if(ranking.length===0)return null;
         const maxGan=Math.max(...ranking.map(r=>r.ganEsp),1);
-        const [ordenRank,setOrdenRank]=React.useState("ganEsp");
+        // usa ordenRank/setOrdenRank del componente Dashboard
 
         const rankOrdenado=[...ranking].sort((a,b)=>{
           if(ordenRank==="ganEsp")return b.ganEsp-a.ganEsp;

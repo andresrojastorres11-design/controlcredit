@@ -1872,6 +1872,166 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
         </div>
       )}
 
+      {/* ── PROYECCIÓN FUTURA 6 MESES ── */}
+      {(creditos.length>0||productos.length>0)&&(()=>{
+        const hoyP=new Date();
+        const meses=Array.from({length:6},(_,i)=>{
+          const d=new Date(hoyP.getFullYear(),hoyP.getMonth()+i,1);
+          return{
+            label:["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"][d.getMonth()]+" "+(d.getFullYear()+"").slice(2),
+            desde:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`,
+            hasta:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${new Date(d.getFullYear(),d.getMonth()+1,0).getDate()}`,
+          };
+        });
+        const dataProy=meses.map(m=>{
+          const cobradoCred=creditos.filter(c=>c.estado!=="Finalizado").flatMap(c=>
+            (c.detalleCuotas||[]).filter(d=>d.fechaVenc>=m.desde&&d.fechaVenc<=m.hasta)
+          ).reduce((s,d)=>s+(d.valorCuotaEditado||0),0)||
+          creditos.filter(c=>c.estado!=="Finalizado").flatMap(c=>
+            (c.detalleCuotas||[]).filter(d=>d.fechaVenc>=m.desde&&d.fechaVenc<=m.hasta)
+          ).reduce((s,d)=>s+(d.valorCuotaEditado||creditos.find(x=>x.detalleCuotas?.includes(d))?.valorCuota||0),0);
+
+          // Calcular por crédito para tener el valorCuota correcto
+          let proyCred=0;
+          creditos.filter(c=>c.estado!=="Finalizado").forEach(c=>{
+            (c.detalleCuotas||[]).filter(d=>d.estado!=="Pagada"&&d.fechaVenc>=m.desde&&d.fechaVenc<=m.hasta).forEach(d=>{
+              proyCred+=d.valorCuotaEditado||c.valorCuota||0;
+            });
+          });
+          let proyProd=0;
+          productos.filter(p=>p.estado!=="Finalizado").forEach(p=>{
+            (p.detalleCuotas||[]).filter(d=>d.estado!=="Pagada"&&d.fechaVenc>=m.desde&&d.fechaVenc<=m.hasta).forEach(d=>{
+              proyProd+=d.valorCuotaEditado||p.valorCuota||0;
+            });
+          });
+          const total=proyCred+proyProd;
+          return{name:m.label,creditos:proyCred,productos:proyProd,total};
+        });
+        const maxVal=Math.max(...dataProy.map(d=>d.total),1);
+        const totalProy6=dataProy.reduce((s,d)=>s+d.total,0);
+        return(
+          <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"20px 24px",marginBottom:18}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:8}}>
+              <div>
+                <h3 style={{margin:"0 0 3px",fontSize:16,fontWeight:800,color:t.text}}>📈 Proyección de cobros — próximos 6 meses</h3>
+                <p style={{margin:0,fontSize:12,color:t.sub}}>Basado en cuotas pendientes en el cronograma (sin contar lo ya pagado)</p>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:20,fontWeight:900,color:t.accent}}>{fmt(totalProy6)}</div>
+                <div style={{fontSize:11,color:t.sub}}>total proyectado 6 meses</div>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:6,alignItems:"flex-end",height:160,marginBottom:12}}>
+              {dataProy.map((d,i)=>{
+                const pctCred=maxVal>0?(d.creditos/maxVal)*100:0;
+                const pctProd=maxVal>0?(d.productos/maxVal)*100:0;
+                const esActual=i===0;
+                return(
+                  <div key={d.name} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4,height:"100%",justifyContent:"flex-end"}}>
+                    <div style={{fontSize:10,color:t.text,fontWeight:700,marginBottom:2}}>{d.total>0?fmt(d.total).replace("$","$").replace(/\.000$/,"k"):""}</div>
+                    <div style={{width:"100%",display:"flex",flexDirection:"column",gap:1,borderRadius:"4px 4px 0 0",overflow:"hidden"}}>
+                      {d.productos>0&&<div style={{height:`${(d.productos/maxVal)*130}px`,background:"#10b981",transition:"height 0.5s",minHeight:d.productos>0?4:0}}/>}
+                      {d.creditos>0&&<div style={{height:`${(d.creditos/maxVal)*130}px`,background:esActual?"#f59e0b":"#3b82f6",transition:"height 0.5s",minHeight:d.creditos>0?4:0}}/>}
+                    </div>
+                    <div style={{fontSize:11,color:esActual?t.accent:t.sub,fontWeight:esActual?700:400,whiteSpace:"nowrap"}}>{d.name}</div>
+                    {esActual&&<div style={{fontSize:9,color:t.accent,fontWeight:700}}>← hoy</div>}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{display:"flex",gap:16,fontSize:11,color:t.sub,justifyContent:"center"}}>
+              <span style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:10,height:10,borderRadius:2,background:"#3b82f6",display:"inline-block"}}/> Créditos</span>
+              <span style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:10,height:10,borderRadius:2,background:"#10b981",display:"inline-block"}}/> Ventas financiadas</span>
+              <span style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:10,height:10,borderRadius:2,background:"#f59e0b",display:"inline-block"}}/> Mes actual</span>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── RANKING RENTABILIDAD POR CLIENTE ── */}
+      {clients.length>0&&(()=>{
+        const ranking=clients.map(cl=>{
+          const crs=creditos.filter(c=>c.clienteId===cl.id);
+          const prds=productos.filter(p=>p.clienteId===cl.id);
+          const ganReal=crs.reduce((s,c)=>{
+            const cap=c.monto/c.cuotas*c.cuotasPagadas;
+            return s+c.saldoCobrado-cap;
+          },0)+prds.reduce((s,p)=>{
+            const cap=p.inversion/p.cuotas*p.cuotasPagadas;
+            return s+p.saldoCobrado-cap;
+          },0);
+          const ganEsp=crs.reduce((s,c)=>s+c.ganancia,0)+prds.reduce((s,p)=>s+p.ganancia,0);
+          const totalPrestado=crs.reduce((s,c)=>s+c.monto,0)+prds.reduce((s,p)=>s+p.inversion,0);
+          const rentPct=totalPrestado>0?Math.round((ganEsp/totalPrestado)*100):0;
+          const deudaActiva=crs.filter(c=>c.estado!=="Finalizado").reduce((s,c)=>s+c.saldoPendiente,0)
+            +prds.filter(p=>p.estado!=="Finalizado").reduce((s,p)=>s+p.saldoPendiente,0);
+          return{...cl,ganReal,ganEsp,totalPrestado,rentPct,deudaActiva,nOps:crs.length+prds.length};
+        }).filter(cl=>cl.nOps>0).sort((a,b)=>b.ganEsp-a.ganEsp).slice(0,10);
+
+        if(ranking.length===0)return null;
+        const maxGan=Math.max(...ranking.map(r=>r.ganEsp),1);
+        const [ordenRank,setOrdenRank]=React.useState("ganEsp");
+
+        const rankOrdenado=[...ranking].sort((a,b)=>{
+          if(ordenRank==="ganEsp")return b.ganEsp-a.ganEsp;
+          if(ordenRank==="ganReal")return b.ganReal-a.ganReal;
+          if(ordenRank==="rentPct")return b.rentPct-a.rentPct;
+          if(ordenRank==="totalPrestado")return b.totalPrestado-a.totalPrestado;
+          return 0;
+        });
+
+        return(
+          <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"20px 24px",marginBottom:18}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:10}}>
+              <div>
+                <h3 style={{margin:"0 0 3px",fontSize:16,fontWeight:800,color:t.text}}>🏆 Ranking de clientes por rentabilidad</h3>
+                <p style={{margin:0,fontSize:12,color:t.sub}}>Top 10 clientes que más ganancia te generan</p>
+              </div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {[{id:"ganEsp",label:"Gan. esperada"},{id:"ganReal",label:"Gan. realizada"},{id:"rentPct",label:"Rentab. %"},{id:"totalPrestado",label:"Capital"}].map(op=>(
+                  <button key={op.id} onClick={()=>setOrdenRank(op.id)}
+                    style={{padding:"5px 10px",borderRadius:7,border:`1px solid ${ordenRank===op.id?t.accent:t.border}`,background:ordenRank===op.id?`${t.accent}20`:"transparent",color:ordenRank===op.id?t.accent:t.sub,fontWeight:ordenRank===op.id?700:400,fontSize:11,cursor:"pointer"}}>
+                    {op.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {rankOrdenado.map((cl,i)=>{
+                const barW=maxGan>0?Math.round((cl.ganEsp/maxGan)*100):0;
+                const av=`hsl(${(cl.id*67)%360},55%,55%)`;
+                const medalla=i===0?"🥇":i===1?"🥈":i===2?"🥉":`${i+1}.`;
+                return(
+                  <div key={cl.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:t.bg,borderRadius:10,border:`1px solid ${i===0?"#f59e0b30":t.border}`}}>
+                    <div style={{fontSize:i<3?18:13,fontWeight:700,color:i===0?"#f59e0b":i===1?"#94a3b8":i===2?"#cd7c2f":t.sub,minWidth:24,textAlign:"center"}}>{medalla}</div>
+                    <div style={{width:34,height:34,borderRadius:"50%",background:av,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:13,flexShrink:0}}>{cl.nombre[0]}{cl.apellido[0]}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                        <span style={{fontWeight:700,color:t.text,fontSize:13}}>{cl.nombre} {cl.apellido}</span>
+                        <div style={{display:"flex",gap:12,fontSize:11,flexShrink:0}}>
+                          <span style={{color:"#8b5cf6",fontWeight:700}}>Esp: {fmt(cl.ganEsp)}</span>
+                          <span style={{color:"#10b981",fontWeight:700}}>Real: {fmt(cl.ganReal)}</span>
+                          <span style={{color:"#f59e0b",fontWeight:700}}>{cl.rentPct}%</span>
+                        </div>
+                      </div>
+                      <div style={{height:6,borderRadius:3,background:t.border,overflow:"hidden"}}>
+                        <div style={{width:`${barW}%`,height:"100%",background:i===0?"linear-gradient(90deg,#f59e0b,#10b981)":i<3?"linear-gradient(90deg,#8b5cf6,#3b82f6)":"#3b82f6",borderRadius:3,transition:"width 0.6s"}}/>
+                      </div>
+                      <div style={{fontSize:10,color:t.sub,marginTop:3,display:"flex",gap:10}}>
+                        <span>Capital: {fmt(cl.totalPrestado)}</span>
+                        <span>{cl.nOps} op{cl.nOps!==1?"s":""}</span>
+                        {cl.deudaActiva>0&&<span style={{color:"#ef4444"}}>Deuda activa: {fmt(cl.deudaActiva)}</span>}
+                        {cl.estado==="Moroso"&&<span style={{color:"#ef4444",fontWeight:700}}>⚠️ Moroso</span>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       {(creditos.length>0||clients.length>0)&&<div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:18,marginBottom:18}}>
         <div style={{background:t.card,borderRadius:14,padding:"20px 22px",border:`1px solid ${t.border}`}}>
           <h3 style={{margin:"0 0 16px",fontSize:15,fontWeight:700,color:t.text}}>Evolución mensual</h3>

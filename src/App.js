@@ -109,8 +109,6 @@ const generatePDF=(credito)=>{
       <div class="seccion-body" style="text-align:center">
         <div class="metrica"><div class="metrica-label">Valor de cuota</div><div class="metrica-valor">${fmt(credito.valorCuota)}</div></div>
         ${credito.entrega>0?`<div class="metrica"><div class="metrica-label" style="color:#10b981">✓ Entrega / Adelanto</div><div class="metrica-valor" style="color:#10b981">${fmt(credito.entrega)}</div></div>`:""}
-        <div class="metrica"><div class="metrica-label">Ya abonado</div><div class="metrica-valor" style="color:#10b981">${fmt(credito.saldoCobrado)}</div></div>
-        <div class="metrica"><div class="metrica-label">Saldo pendiente</div><div class="metrica-valor" style="color:#ef4444">${fmt(credito.saldoPendiente)}</div></div>
         <div class="metrica"><div class="metrica-label">Cuotas pagadas</div><div class="metrica-valor">${credito.cuotasPagadas}/${credito.cuotas}</div></div>
         <div class="metrica"><div class="metrica-label">Progreso</div><div class="metrica-valor">${pct}%</div></div>
       </div>
@@ -1268,9 +1266,9 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
   const [mesPDF,setMesPDF]=useState(hoy.getMonth()+1);
   const [anioPDF,setAnioPDF]=useState(hoy.getFullYear());
   const [tabPagos,setTabPagos]=useState("aldia");
+  const [ordenRank,setOrdenRank]=useState("ganEsp");
   const [clienteExpandido,setClienteExpandido]=useState(null);
   const [editandoMeta,setEditandoMeta]=useState(false);
-  const [ordenRank,setOrdenRank]=useState("ganEsp");
   const [meta,setMeta]=useState({ganancia:"",clientes:""});
   const [metaGuardada,setMetaGuardada]=useState({ganancia:0,clientes:0});
   const [emailBackup,setEmailBackup]=useState("");
@@ -1372,10 +1370,8 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
 
   const itemsPagosRaw=itemsFuentePagos.map(c=>{
     const det=c.detalleCuotas||[];
-    // Cuotas pendientes o parciales ordenadas por fecha
     const pendientes=det.filter(d=>d.estado==="Pendiente"||d.estado==="Parcial").sort((a,b)=>new Date(a.fechaVenc)-new Date(b.fechaVenc));
     if(pendientes.length===0)return null;
-    // Tomar la cuota más antigua pendiente
     const proxCuota=pendientes[0];
     const proxFecha=proxCuota.fechaVenc?new Date(proxCuota.fechaVenc):c.proximoPago?new Date(c.proximoPago):null;
     if(proxFecha)proxFecha.setHours(0,0,0,0);
@@ -1390,8 +1386,7 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
     return{...c,proxFecha,diffDias,cat,proxCuota,pendientes,cuotasVencidas};
   }).filter(Boolean);
 
-  // Agrupar por cliente+item — cada crédito/venta aparece por separado
-  // La key es única por ítem para no pisar ventas con créditos del mismo cliente
+  // Cada ítem aparece por separado (crédito y venta del mismo cliente no se pisan)
   const catPrioridad={moroso:3,vencido:2,aldia:1};
   const itemsPagos=itemsPagosRaw.sort((a,b)=>catPrioridad[b.cat]-catPrioridad[a.cat]);
   const pagosAlDia=itemsPagos.filter(i=>i.cat==="aldia");
@@ -1759,10 +1754,11 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
                             {(c.clienteNombre||"?")[0].toUpperCase()}
                           </div>
                           <div>
-                            <div style={{fontWeight:700,color:t.text,fontSize:14,display:"flex",alignItems:"center",gap:8}}>
+                            <div style={{fontWeight:700,color:t.text,fontSize:14,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                               {c.clienteNombre}
-                              {c._tipo==="producto"&&<span style={{fontSize:10,background:"#8b5cf6",color:"#fff",borderRadius:20,padding:"1px 7px",fontWeight:700}}>🛒 {c._etiqueta||"Venta"}</span>}
-                              {(!c._tipo||c._tipo==="credito")&&<span style={{fontSize:10,background:"#3b82f6",color:"#fff",borderRadius:20,padding:"1px 7px",fontWeight:700}}>💳 Crédito</span>}
+                              {c._tipo==="producto"
+                                ?<span style={{fontSize:10,background:"#8b5cf6",color:"#fff",borderRadius:20,padding:"1px 7px",fontWeight:700}}>🛒 {c._etiqueta||"Venta"}</span>
+                                :<span style={{fontSize:10,background:"#3b82f6",color:"#fff",borderRadius:20,padding:"1px 7px",fontWeight:700}}>💳 Crédito</span>}
                               {nVencidas>0&&<span style={{fontSize:10,background:tabActiva.color,color:"#fff",borderRadius:20,padding:"1px 7px",fontWeight:700}}>{nVencidas} vencida{nVencidas!==1?"s":""}</span>}
                             </div>
                             <div style={{fontSize:11,color:t.sub,display:"flex",gap:12,flexWrap:"wrap",marginTop:2}}>
@@ -1774,7 +1770,7 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
                           </div>
                         </div>
                         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                          {/* BOTÓN COBRADO — paga la próxima cuota con 1 clic, funciona para créditos Y productos */}
+                          {/* BOTÓN COBRADO — funciona para créditos Y productos */}
                           <button onClick={async e=>{
                             e.stopPropagation();
                             if(!window.confirm(`¿Marcar cuota de ${fmt(c.proxCuota?.valorCuotaEditado||c.valorCuota)} como pagada?`))return;
@@ -1790,8 +1786,9 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
                             const prox=det.find(d=>d.estado!=="Pagada");
                             const nuevoEstado=pendiente<=0?"Finalizado":"Al día";
                             const tabla=c._tipo==="producto"?"productos":"creditos";
-                            const historialActual=c._tipo==="producto"?[]:(c.historial||[]);
-                            await sb.from(tabla).update({cuotas_pagadas:pagadas,saldo_cobrado:totalCobrado,saldo_pendiente:pendiente,proximo_pago:prox?.fechaVenc||"",estado:nuevoEstado,detalle_cuotas:det,...(c._tipo!=="producto"&&{historial:[...historialActual,{tipo:"pago_completo",cuota:idx+1,monto:vc,fecha:new Date().toLocaleDateString("es-AR")}]})}).eq("id",c.id);
+                            const updateData={cuotas_pagadas:pagadas,saldo_cobrado:totalCobrado,saldo_pendiente:pendiente,proximo_pago:prox?.fechaVenc||"",estado:nuevoEstado,detalle_cuotas:det};
+                            if(c._tipo!=="producto")updateData.historial=[...(c.historial||[]),{tipo:"pago_completo",cuota:idx+1,monto:vc,fecha:new Date().toLocaleDateString("es-AR")}];
+                            await sb.from(tabla).update(updateData).eq("id",c.id);
                             if(c._tipo==="producto"){
                               setProductos(ps=>ps.map(x=>x.id===c.id?{...x,cuotasPagadas:pagadas,saldoCobrado:totalCobrado,saldoPendiente:pendiente,proximoPago:prox?.fechaVenc||"",estado:nuevoEstado,detalleCuotas:det}:x));
                             } else {
@@ -1878,64 +1875,34 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
         const hoyP=new Date();
         const meses=Array.from({length:6},(_,i)=>{
           const d=new Date(hoyP.getFullYear(),hoyP.getMonth()+i,1);
-          return{
-            label:["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"][d.getMonth()]+" "+(d.getFullYear()+"").slice(2),
-            desde:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`,
-            hasta:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${new Date(d.getFullYear(),d.getMonth()+1,0).getDate()}`,
-          };
+          return{label:["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"][d.getMonth()]+" "+(d.getFullYear()+"").slice(2),desde:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`,hasta:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${new Date(d.getFullYear(),d.getMonth()+1,0).getDate()}`};
         });
         const dataProy=meses.map(m=>{
-          const cobradoCred=creditos.filter(c=>c.estado!=="Finalizado").flatMap(c=>
-            (c.detalleCuotas||[]).filter(d=>d.fechaVenc>=m.desde&&d.fechaVenc<=m.hasta)
-          ).reduce((s,d)=>s+(d.valorCuotaEditado||0),0)||
-          creditos.filter(c=>c.estado!=="Finalizado").flatMap(c=>
-            (c.detalleCuotas||[]).filter(d=>d.fechaVenc>=m.desde&&d.fechaVenc<=m.hasta)
-          ).reduce((s,d)=>s+(d.valorCuotaEditado||creditos.find(x=>x.detalleCuotas?.includes(d))?.valorCuota||0),0);
-
-          // Calcular por crédito para tener el valorCuota correcto
           let proyCred=0;
-          creditos.filter(c=>c.estado!=="Finalizado").forEach(c=>{
-            (c.detalleCuotas||[]).filter(d=>d.estado!=="Pagada"&&d.fechaVenc>=m.desde&&d.fechaVenc<=m.hasta).forEach(d=>{
-              proyCred+=d.valorCuotaEditado||c.valorCuota||0;
-            });
-          });
+          creditos.filter(c=>c.estado!=="Finalizado").forEach(c=>{(c.detalleCuotas||[]).filter(d=>d.estado!=="Pagada"&&d.fechaVenc>=m.desde&&d.fechaVenc<=m.hasta).forEach(d=>{proyCred+=d.valorCuotaEditado||c.valorCuota||0;});});
           let proyProd=0;
-          productos.filter(p=>p.estado!=="Finalizado").forEach(p=>{
-            (p.detalleCuotas||[]).filter(d=>d.estado!=="Pagada"&&d.fechaVenc>=m.desde&&d.fechaVenc<=m.hasta).forEach(d=>{
-              proyProd+=d.valorCuotaEditado||p.valorCuota||0;
-            });
-          });
-          const total=proyCred+proyProd;
-          return{name:m.label,creditos:proyCred,productos:proyProd,total};
+          productosActivos.forEach(p=>{(p.detalleCuotas||[]).filter(d=>d.estado!=="Pagada"&&d.fechaVenc>=m.desde&&d.fechaVenc<=m.hasta).forEach(d=>{proyProd+=d.valorCuotaEditado||p.valorCuota||0;});});
+          return{name:m.label,creditos:proyCred,productos:proyProd,total:proyCred+proyProd};
         });
         const maxVal=Math.max(...dataProy.map(d=>d.total),1);
         const totalProy6=dataProy.reduce((s,d)=>s+d.total,0);
         return(
           <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"20px 24px",marginBottom:18}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:8}}>
-              <div>
-                <h3 style={{margin:"0 0 3px",fontSize:16,fontWeight:800,color:t.text}}>📈 Proyección de cobros — próximos 6 meses</h3>
-                <p style={{margin:0,fontSize:12,color:t.sub}}>Basado en cuotas pendientes en el cronograma (sin contar lo ya pagado)</p>
-              </div>
-              <div style={{textAlign:"right"}}>
-                <div style={{fontSize:20,fontWeight:900,color:t.accent}}>{fmt(totalProy6)}</div>
-                <div style={{fontSize:11,color:t.sub}}>total proyectado 6 meses</div>
-              </div>
+              <div><h3 style={{margin:"0 0 3px",fontSize:16,fontWeight:800,color:t.text}}>📈 Proyección de cobros — próximos 6 meses</h3><p style={{margin:0,fontSize:12,color:t.sub}}>Basado en cuotas pendientes en el cronograma</p></div>
+              <div style={{textAlign:"right"}}><div style={{fontSize:20,fontWeight:900,color:t.accent}}>{fmt(totalProy6)}</div><div style={{fontSize:11,color:t.sub}}>total proyectado 6 meses</div></div>
             </div>
             <div style={{display:"flex",gap:6,alignItems:"flex-end",height:160,marginBottom:12}}>
               {dataProy.map((d,i)=>{
-                const pctCred=maxVal>0?(d.creditos/maxVal)*100:0;
-                const pctProd=maxVal>0?(d.productos/maxVal)*100:0;
                 const esActual=i===0;
                 return(
                   <div key={d.name} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4,height:"100%",justifyContent:"flex-end"}}>
-                    <div style={{fontSize:10,color:t.text,fontWeight:700,marginBottom:2}}>{d.total>0?fmt(d.total).replace("$","$").replace(/\.000$/,"k"):""}</div>
+                    <div style={{fontSize:10,color:t.text,fontWeight:700,marginBottom:2}}>{d.total>0?fmt(d.total).replace(/\.000$/,"k"):""}</div>
                     <div style={{width:"100%",display:"flex",flexDirection:"column",gap:1,borderRadius:"4px 4px 0 0",overflow:"hidden"}}>
-                      {d.productos>0&&<div style={{height:`${(d.productos/maxVal)*130}px`,background:"#10b981",transition:"height 0.5s",minHeight:d.productos>0?4:0}}/>}
-                      {d.creditos>0&&<div style={{height:`${(d.creditos/maxVal)*130}px`,background:esActual?"#f59e0b":"#3b82f6",transition:"height 0.5s",minHeight:d.creditos>0?4:0}}/>}
+                      {d.productos>0&&<div style={{height:`${(d.productos/maxVal)*130}px`,background:"#10b981",minHeight:d.productos>0?4:0}}/>}
+                      {d.creditos>0&&<div style={{height:`${(d.creditos/maxVal)*130}px`,background:esActual?"#f59e0b":"#3b82f6",minHeight:d.creditos>0?4:0}}/>}
                     </div>
                     <div style={{fontSize:11,color:esActual?t.accent:t.sub,fontWeight:esActual?700:400,whiteSpace:"nowrap"}}>{d.name}</div>
-                    {esActual&&<div style={{fontSize:9,color:t.accent,fontWeight:700}}>← hoy</div>}
                   </div>
                 );
               })}
@@ -1954,46 +1921,29 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
         const ranking=clients.map(cl=>{
           const crs=creditos.filter(c=>c.clienteId===cl.id);
           const prds=productos.filter(p=>p.clienteId===cl.id);
-          const ganReal=crs.reduce((s,c)=>{
-            const cap=c.monto/c.cuotas*c.cuotasPagadas;
-            return s+c.saldoCobrado-cap;
-          },0)+prds.reduce((s,p)=>{
-            const cap=p.inversion/p.cuotas*p.cuotasPagadas;
-            return s+p.saldoCobrado-cap;
-          },0);
+          const ganReal=crs.reduce((s,c)=>s+c.saldoCobrado-(c.monto/c.cuotas*c.cuotasPagadas),0)+prds.reduce((s,p)=>s+p.saldoCobrado-(p.inversion/p.cuotas*p.cuotasPagadas),0);
           const ganEsp=crs.reduce((s,c)=>s+c.ganancia,0)+prds.reduce((s,p)=>s+p.ganancia,0);
           const totalPrestado=crs.reduce((s,c)=>s+c.monto,0)+prds.reduce((s,p)=>s+p.inversion,0);
           const rentPct=totalPrestado>0?Math.round((ganEsp/totalPrestado)*100):0;
-          const deudaActiva=crs.filter(c=>c.estado!=="Finalizado").reduce((s,c)=>s+c.saldoPendiente,0)
-            +prds.filter(p=>p.estado!=="Finalizado").reduce((s,p)=>s+p.saldoPendiente,0);
+          const deudaActiva=crs.filter(c=>c.estado!=="Finalizado").reduce((s,c)=>s+c.saldoPendiente,0)+prds.filter(p=>p.estado!=="Finalizado").reduce((s,p)=>s+p.saldoPendiente,0);
           return{...cl,ganReal,ganEsp,totalPrestado,rentPct,deudaActiva,nOps:crs.length+prds.length};
-        }).filter(cl=>cl.nOps>0).sort((a,b)=>b.ganEsp-a.ganEsp).slice(0,10);
-
+        }).filter(cl=>cl.nOps>0);
         if(ranking.length===0)return null;
-        const maxGan=Math.max(...ranking.map(r=>r.ganEsp),1);
-        // usa ordenRank/setOrdenRank del componente Dashboard
-
         const rankOrdenado=[...ranking].sort((a,b)=>{
           if(ordenRank==="ganEsp")return b.ganEsp-a.ganEsp;
           if(ordenRank==="ganReal")return b.ganReal-a.ganReal;
           if(ordenRank==="rentPct")return b.rentPct-a.rentPct;
           if(ordenRank==="totalPrestado")return b.totalPrestado-a.totalPrestado;
           return 0;
-        });
-
+        }).slice(0,10);
+        const maxGan=Math.max(...rankOrdenado.map(r=>r.ganEsp),1);
         return(
           <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"20px 24px",marginBottom:18}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:10}}>
-              <div>
-                <h3 style={{margin:"0 0 3px",fontSize:16,fontWeight:800,color:t.text}}>🏆 Ranking de clientes por rentabilidad</h3>
-                <p style={{margin:0,fontSize:12,color:t.sub}}>Top 10 clientes que más ganancia te generan</p>
-              </div>
+              <div><h3 style={{margin:"0 0 3px",fontSize:16,fontWeight:800,color:t.text}}>🏆 Ranking de clientes por rentabilidad</h3><p style={{margin:0,fontSize:12,color:t.sub}}>Top 10 clientes que más ganancia te generan</p></div>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                 {[{id:"ganEsp",label:"Gan. esperada"},{id:"ganReal",label:"Gan. realizada"},{id:"rentPct",label:"Rentab. %"},{id:"totalPrestado",label:"Capital"}].map(op=>(
-                  <button key={op.id} onClick={()=>setOrdenRank(op.id)}
-                    style={{padding:"5px 10px",borderRadius:7,border:`1px solid ${ordenRank===op.id?t.accent:t.border}`,background:ordenRank===op.id?`${t.accent}20`:"transparent",color:ordenRank===op.id?t.accent:t.sub,fontWeight:ordenRank===op.id?700:400,fontSize:11,cursor:"pointer"}}>
-                    {op.label}
-                  </button>
+                  <button key={op.id} onClick={()=>setOrdenRank(op.id)} style={{padding:"5px 10px",borderRadius:7,border:`1px solid ${ordenRank===op.id?t.accent:t.border}`,background:ordenRank===op.id?`${t.accent}20`:"transparent",color:ordenRank===op.id?t.accent:t.sub,fontWeight:ordenRank===op.id?700:400,fontSize:11,cursor:"pointer"}}>{op.label}</button>
                 ))}
               </div>
             </div>
@@ -2007,7 +1957,7 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
                     <div style={{fontSize:i<3?18:13,fontWeight:700,color:i===0?"#f59e0b":i===1?"#94a3b8":i===2?"#cd7c2f":t.sub,minWidth:24,textAlign:"center"}}>{medalla}</div>
                     <div style={{width:34,height:34,borderRadius:"50%",background:av,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:13,flexShrink:0}}>{cl.nombre[0]}{cl.apellido[0]}</div>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4,flexWrap:"wrap",gap:4}}>
                         <span style={{fontWeight:700,color:t.text,fontSize:13}}>{cl.nombre} {cl.apellido}</span>
                         <div style={{display:"flex",gap:12,fontSize:11,flexShrink:0}}>
                           <span style={{color:"#8b5cf6",fontWeight:700}}>Esp: {fmt(cl.ganEsp)}</span>
@@ -2015,13 +1965,10 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
                           <span style={{color:"#f59e0b",fontWeight:700}}>{cl.rentPct}%</span>
                         </div>
                       </div>
-                      <div style={{height:6,borderRadius:3,background:t.border,overflow:"hidden"}}>
-                        <div style={{width:`${barW}%`,height:"100%",background:i===0?"linear-gradient(90deg,#f59e0b,#10b981)":i<3?"linear-gradient(90deg,#8b5cf6,#3b82f6)":"#3b82f6",borderRadius:3,transition:"width 0.6s"}}/>
-                      </div>
-                      <div style={{fontSize:10,color:t.sub,marginTop:3,display:"flex",gap:10}}>
-                        <span>Capital: {fmt(cl.totalPrestado)}</span>
-                        <span>{cl.nOps} op{cl.nOps!==1?"s":""}</span>
-                        {cl.deudaActiva>0&&<span style={{color:"#ef4444"}}>Deuda activa: {fmt(cl.deudaActiva)}</span>}
+                      <div style={{height:6,borderRadius:3,background:t.border,overflow:"hidden"}}><div style={{width:`${barW}%`,height:"100%",background:i===0?"linear-gradient(90deg,#f59e0b,#10b981)":i<3?"linear-gradient(90deg,#8b5cf6,#3b82f6)":"#3b82f6",borderRadius:3}}/></div>
+                      <div style={{fontSize:10,color:t.sub,marginTop:3,display:"flex",gap:10,flexWrap:"wrap"}}>
+                        <span>Capital: {fmt(cl.totalPrestado)}</span><span>{cl.nOps} op{cl.nOps!==1?"s":""}</span>
+                        {cl.deudaActiva>0&&<span style={{color:"#ef4444"}}>Deuda: {fmt(cl.deudaActiva)}</span>}
                         {cl.estado==="Moroso"&&<span style={{color:"#ef4444",fontWeight:700}}>⚠️ Moroso</span>}
                       </div>
                     </div>
@@ -2451,6 +2398,8 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
   const [tabActiva,setTabActiva]=useState("financiado");
   const [expandido,setExpandido]=useState(null);
   const [loading,setLoading]=useState(false);
+  const [searchProd,setSearchProd]=useState("");
+  const [filtroEstProd,setFiltroEstProd]=useState("Todos");
   const EF={clienteId:"",producto:"",inversion:"",precioFinanciado:"",cuotas:"",frecuencia:"Mensual",estado:"Activo",fechaOtorg:new Date().toISOString().slice(0,10),entrega:""};
   const [form,setForm]=useState(EF);
   const EFC={producto:"",clienteNombre:"",costo:"",precioVenta:"",fecha:new Date().toISOString().slice(0,10),notas:""};
@@ -2547,11 +2496,26 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
         ))}
       </div>
 
-      {/* VENTA FINANCIADA — igual a créditos */}
+      {/* VENTA FINANCIADA — con buscador igual a créditos */}
       {tabActiva==="financiado"&&(
-        productos.length===0?<div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"60px",textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>🛒</div><div style={{fontSize:15,fontWeight:700,color:t.text,marginBottom:6}}>No hay ventas financiadas</div><button onClick={()=>{setForm(EF);setModal(true);}} style={{background:t.accent,color:"#fff",border:"none",borderRadius:10,padding:"10px 20px",fontWeight:700,cursor:"pointer",marginTop:10}}>+ Nueva venta</button></div>:(
+        <div>
+          <div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:200,position:"relative"}}>
+              <input value={searchProd} onChange={e=>setSearchProd(e.target.value)} placeholder="Buscar por cliente o producto..." style={{width:"100%",padding:"10px 14px 10px 40px",borderRadius:10,border:`1px solid ${t.border}`,background:t.card,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+              <span style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",color:t.sub}}><Icon name="search" size={16}/></span>
+            </div>
+            {["Todos","Activo","Atrasado","Moroso","Finalizado"].map(f=><button key={f} onClick={()=>setFiltroEstProd(f)} style={{padding:"8px 13px",borderRadius:8,border:`1px solid ${filtroEstProd===f?t.accent:t.border}`,background:filtroEstProd===f?t.accent:"transparent",color:filtroEstProd===f?"#fff":t.sub,fontWeight:600,fontSize:12,cursor:"pointer"}}>{f}</button>)}
+          </div>
+          {(()=>{
+            const filtrados=productos.filter(p=>{
+              const q=searchProd.toLowerCase();
+              return(p.clienteNombre.toLowerCase().includes(q)||p.producto.toLowerCase().includes(q))&&(filtroEstProd==="Todos"||p.estado===filtroEstProd);
+            });
+            if(productos.length===0)return<div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"60px",textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>🛒</div><div style={{fontSize:15,fontWeight:700,color:t.text,marginBottom:6}}>No hay ventas financiadas</div><button onClick={()=>{setForm(EF);setModal(true);}} style={{background:t.accent,color:"#fff",border:"none",borderRadius:10,padding:"10px 20px",fontWeight:700,cursor:"pointer",marginTop:10}}>+ Nueva venta</button></div>;
+            if(filtrados.length===0)return<div style={{padding:"40px",textAlign:"center",color:t.sub}}>No se encontraron ventas</div>;
+            return(
           <div style={{display:"grid",gap:14}}>
-            {productos.map(p=>{
+            {filtrados.map(p=>{
               const pct=Math.round((p.cuotasPagadas/p.cuotas)*100);
               const exp=expandido===p.id;
               return(
@@ -2605,7 +2569,9 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
               );
             })}
           </div>
-        )
+            );
+          })()}
+        </div>
       )}
 
       {/* VENTA DE CONTADO */}
@@ -2822,359 +2788,66 @@ const Presupuesto=({t})=>{
   const [guardados,setGuardados]=useState(()=>{try{return JSON.parse(localStorage.getItem("cc_presupuestos")||"[]");}catch{return[];}});
   const [nombreGuardar,setNombreGuardar]=useState("");
   const [guardandoNombre,setGuardandoNombre]=useState(false);
-
-  const montoN=+monto||0;
-  const pctN=+porcentaje||0;
-  const cuotasN=+cuotas||1;
-  const interes=montoN*(pctN/100);
-  const totalCobrar=montoN+interes;
-  const valorCuota=totalCobrar/cuotasN;
-
-  // ── TABLA FRANCESA: tasa por período, cuota fija, desglose capital+interés ──
+  const montoN=+monto||0;const pctN=+porcentaje||0;const cuotasN=+cuotas||1;
+  const interes=montoN*(pctN/100);const totalCobrar=montoN+interes;const valorCuota=totalCobrar/cuotasN;
   const calcularTablaFrancesa=()=>{
     if(!montoN||!pctN||!cuotasN)return[];
-    const hoy=new Date();
-    const dias=frecuencia==="Semanal"?7:frecuencia==="Quincenal"?14:30;
+    const hoy=new Date();const dias=frecuencia==="Semanal"?7:frecuencia==="Quincenal"?14:30;
     const tasaPeriodo=pctN/100/cuotasN;
-    const cuotaFija=tasaPeriodo>0
-      ? montoN*tasaPeriodo/(1-Math.pow(1+tasaPeriodo,-cuotasN))
-      : montoN/cuotasN;
+    const cuotaFija=tasaPeriodo>0?montoN*tasaPeriodo/(1-Math.pow(1+tasaPeriodo,-cuotasN)):montoN/cuotasN;
     let saldo=montoN;
     return Array.from({length:cuotasN},(_,i)=>{
-      const interesPeriodo=saldo*tasaPeriodo;
-      const capitalPeriodo=cuotaFija-interesPeriodo;
-      saldo=Math.max(0,saldo-capitalPeriodo);
-      const d=new Date(hoy);
-      d.setDate(hoy.getDate()+dias*(i+1));
+      const interesPeriodo=saldo*tasaPeriodo;const capitalPeriodo=cuotaFija-interesPeriodo;saldo=Math.max(0,saldo-capitalPeriodo);
+      const d=new Date(hoy);d.setDate(hoy.getDate()+dias*(i+1));
       return{num:i+1,fecha:d.toLocaleDateString("es-AR"),cuota:cuotaFija,capital:capitalPeriodo,intereses:interesPeriodo,saldoRestante:saldo};
     });
   };
-
   const fechasCuotas=()=>{
-    if(!montoN)return[];
-    const hoy=new Date();
-    const dias=frecuencia==="Semanal"?7:frecuencia==="Quincenal"?14:30;
-    return Array.from({length:cuotasN},(_,i)=>{
-      const d=new Date(hoy);
-      d.setDate(hoy.getDate()+dias*(i+1));
-      return{num:i+1,fecha:d.toLocaleDateString("es-AR"),valor:valorCuota};
-    });
+    if(!montoN)return[];const hoy=new Date();const dias=frecuencia==="Semanal"?7:frecuencia==="Quincenal"?14:30;
+    return Array.from({length:cuotasN},(_,i)=>{const d=new Date(hoy);d.setDate(hoy.getDate()+dias*(i+1));return{num:i+1,fecha:d.toLocaleDateString("es-AR"),valor:valorCuota};});
   };
-
-  const cuotasDetalle=fechasCuotas();
-  const cuotasFrancesas=calcularTablaFrancesa();
-  const cuotaFrancesaFija=cuotasFrancesas[0]?.cuota||0;
-
+  const cuotasDetalle=fechasCuotas();const cuotasFrancesas=calcularTablaFrancesa();const cuotaFrancesaFija=cuotasFrancesas[0]?.cuota||0;
   const generarPDF=()=>{
     if(!montoN||!pctN){alert("Ingresá el monto y el porcentaje");return;}
     const filas=tablaFrancesa
-      ? cuotasFrancesas.map(c=>`<tr><td style="text-align:center;font-weight:700">${c.num}</td><td style="text-align:center">${c.fecha}</td><td style="text-align:center;font-weight:800;color:#1e40af">${fmt(c.cuota)}</td></tr>`).join("")
-      : cuotasDetalle.map(c=>`<tr><td style="text-align:center;font-weight:700">${c.num}</td><td style="text-align:center">${c.fecha}</td><td style="text-align:center;font-weight:800;color:#1e40af">${fmt(c.valor)}</td></tr>`).join("");
+      ?cuotasFrancesas.map(c=>`<tr><td style="text-align:center;font-weight:700">${c.num}</td><td style="text-align:center">${c.fecha}</td><td style="text-align:center;font-weight:800;color:#1e40af">${fmt(c.cuota)}</td></tr>`).join("")
+      :cuotasDetalle.map(c=>`<tr><td style="text-align:center;font-weight:700">${c.num}</td><td style="text-align:center">${c.fecha}</td><td style="text-align:center;font-weight:800;color:#1e40af">${fmt(c.valor)}</td></tr>`).join("");
     const html=`
-      <div class="header">
-        <div>
-          <div class="logo">Control<span>Credit</span></div>
-          <div class="subtitulo">Presupuesto de ${tipo} — ${tablaFrancesa?"Tabla Francesa":"Cuotas Fijas"}</div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-size:13px;font-weight:700">PRESUPUESTO</div>
-          <div style="font-size:11px;opacity:0.8">Fecha: ${new Date().toLocaleDateString("es-AR")}</div>
-          <div style="font-size:10px;opacity:0.7;margin-top:2px">Válido por 7 días</div>
-        </div>
-      </div>
-      <div class="seccion">
-        <div class="seccion-titulo">💰 Detalle del ${tipo}</div>
-        <div class="seccion-body" style="text-align:center">
-          <div class="metrica"><div class="metrica-label">Cuotas</div><div class="metrica-valor">${cuotasN} cuota${cuotasN!==1?"s":""} ${frecuencia.toLowerCase()}${cuotasN!==1?"es":""}</div></div>
-          <div class="metrica"><div class="metrica-label">Valor por cuota</div><div class="metrica-valor" style="color:#10b981">${fmt(tablaFrancesa?cuotaFrancesaFija:valorCuota)}</div></div>
-        </div>
-      </div>
-      <div class="seccion">
-        <div class="seccion-titulo">📅 Cronograma de pagos</div>
-        <div class="seccion-body">
-          <table>
-            <thead><tr style="background:#f8fafc"><th style="text-align:center;padding:10px">Cuota #</th><th style="text-align:center;padding:10px">Fecha de pago</th><th style="text-align:center;padding:10px">Monto</th></tr></thead>
-            <tbody>${filas}</tbody>
-          </table>
-        </div>
-      </div>
-      <div style="background:#f0f9ff;border-left:4px solid #3b82f6;padding:14px 16px;font-size:12px;color:#1e40af;border-radius:0 8px 8px 0;margin-bottom:16px;line-height:1.6">
-        📌 <strong>Condiciones:</strong> Este presupuesto es válido por 7 días desde la fecha de emisión. Los montos están expresados en pesos argentinos. El otorgamiento está sujeto a aprobación crediticia.
-      </div>
-      <div class="footer">ControlCredit &copy; ${new Date().getFullYear()} — Documento no válido como recibo de pago — Solo informativo</div>
-    `;
+      <div class="header"><div><div class="logo">Control<span>Credit</span></div><div class="subtitulo">Presupuesto de ${tipo} — ${tablaFrancesa?"Tabla Francesa":"Cuotas Fijas"}</div></div><div style="text-align:right"><div style="font-size:13px;font-weight:700">PRESUPUESTO</div><div style="font-size:11px;opacity:0.8">Fecha: ${new Date().toLocaleDateString("es-AR")}</div><div style="font-size:10px;opacity:0.7;margin-top:2px">Válido por 7 días</div></div></div>
+      <div class="seccion"><div class="seccion-titulo">💰 Detalle del ${tipo}</div><div class="seccion-body" style="text-align:center"><div class="metrica"><div class="metrica-label">Cuotas</div><div class="metrica-valor">${cuotasN} cuota${cuotasN!==1?"s":""} ${frecuencia.toLowerCase()}${cuotasN!==1?"es":""}</div></div><div class="metrica"><div class="metrica-label">Valor por cuota</div><div class="metrica-valor" style="color:#10b981">${fmt(tablaFrancesa?cuotaFrancesaFija:valorCuota)}</div></div></div></div>
+      <div class="seccion"><div class="seccion-titulo">📅 Cronograma de pagos</div><div class="seccion-body"><table><thead><tr style="background:#f8fafc"><th style="text-align:center;padding:10px">Cuota #</th><th style="text-align:center;padding:10px">Fecha de pago</th><th style="text-align:center;padding:10px">Monto</th></tr></thead><tbody>${filas}</tbody></table></div></div>
+      <div style="background:#f0f9ff;border-left:4px solid #3b82f6;padding:14px 16px;font-size:12px;color:#1e40af;border-radius:0 8px 8px 0;margin-bottom:16px;line-height:1.6">📌 <strong>Condiciones:</strong> Este presupuesto es válido por 7 días desde la fecha de emisión. Los montos están expresados en pesos argentinos. El otorgamiento está sujeto a aprobación crediticia.</div>
+      <div class="footer">ControlCredit &copy; ${new Date().getFullYear()} — Documento no válido como recibo de pago — Solo informativo</div>`;
     abrirPDF(html,"Presupuesto");
   };
-
   return(
     <div>
-      <div style={{marginBottom:22}}>
-        <h1 style={{fontSize:22,fontWeight:800,color:t.text,margin:"0 0 4px"}}>🧮 Calculadora de Presupuesto</h1>
-        <p style={{color:t.sub,margin:0,fontSize:13}}>Calculá cuotas y generá el PDF para enviar al cliente</p>
-      </div>
-
+      <div style={{marginBottom:22}}><h1 style={{fontSize:22,fontWeight:800,color:t.text,margin:"0 0 4px"}}>🧮 Calculadora de Presupuesto</h1><p style={{color:t.sub,margin:0,fontSize:13}}>Calculá cuotas y generá el PDF para enviar al cliente</p></div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:20}}>
-        {/* PANEL IZQUIERDO */}
         <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"24px"}}>
           <h3 style={{margin:"0 0 18px",fontSize:15,fontWeight:700,color:t.text}}>Configurar presupuesto</h3>
-
-          {/* Tipo crédito/venta */}
-          <div style={{marginBottom:16}}>
-            <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Tipo</label>
-            <div style={{display:"flex",gap:8}}>
-              {["Crédito","Venta"].map(op=>(
-                <button key={op} onClick={()=>setTipo(op)}
-                  style={{flex:1,padding:"9px",borderRadius:8,border:`1px solid ${tipo===op?t.accent:t.border}`,background:tipo===op?`${t.accent}15`:"transparent",color:tipo===op?t.accent:t.sub,fontWeight:tipo===op?700:500,fontSize:13,cursor:"pointer"}}>
-                  {op==="Crédito"?"💳 Crédito":"🛒 Venta"}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Selector sistema de cuotas */}
-          <div style={{marginBottom:16}}>
-            <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Sistema de cuotas</label>
-            <div style={{display:"flex",gap:8}}>
-              <button onClick={()=>setTablaFrancesa(false)}
-                style={{flex:1,padding:"10px 8px",borderRadius:8,border:`2px solid ${!tablaFrancesa?t.accent:t.border}`,background:!tablaFrancesa?`${t.accent}15`:"transparent",color:!tablaFrancesa?t.accent:t.sub,fontWeight:!tablaFrancesa?700:500,fontSize:12,cursor:"pointer",textAlign:"center"}}>
-                <div style={{fontSize:16,marginBottom:2}}>📋</div>
-                <div>Cuotas fijas</div>
-                <div style={{fontSize:10,opacity:0.7,marginTop:2}}>Todas iguales</div>
-              </button>
-              <button onClick={()=>setTablaFrancesa(true)}
-                style={{flex:1,padding:"10px 8px",borderRadius:8,border:`2px solid ${tablaFrancesa?"#8b5cf6":t.border}`,background:tablaFrancesa?"#8b5cf615":"transparent",color:tablaFrancesa?"#8b5cf6":t.sub,fontWeight:tablaFrancesa?700:500,fontSize:12,cursor:"pointer",textAlign:"center"}}>
-                <div style={{fontSize:16,marginBottom:2}}>🏦</div>
-                <div>Tabla francesa</div>
-                <div style={{fontSize:10,opacity:0.7,marginTop:2}}>Capital + interés</div>
-              </button>
-            </div>
-          </div>
-
-          {/* Monto */}
-          <div style={{marginBottom:16}}>
-            <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Monto ($)</label>
-            <input type="number" value={monto} onChange={e=>setMonto(e.target.value)} placeholder="Ej: 100000"
-              style={{width:"100%",padding:"10px 14px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:15,outline:"none",boxSizing:"border-box",fontWeight:600}}/>
-          </div>
-
-          {/* Porcentaje */}
-          <div style={{marginBottom:16}}>
-            <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Interés / Porcentaje (%)</label>
-            <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}>
-              {["10","15","20","25","30","40","50"].map(p=>(
-                <button key={p} onClick={()=>setPorcentaje(p)}
-                  style={{padding:"6px 10px",borderRadius:7,border:`1px solid ${porcentaje===p?t.accent:t.border}`,background:porcentaje===p?t.accent:"transparent",color:porcentaje===p?"#fff":t.sub,fontWeight:600,fontSize:12,cursor:"pointer"}}>
-                  {p}%
-                </button>
-              ))}
-            </div>
-            <input type="number" value={porcentaje} onChange={e=>setPorcentaje(e.target.value)} placeholder="Ej: 25"
-              style={{width:"100%",padding:"9px 14px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
-          </div>
-
-          {/* Frecuencia */}
-          <div style={{marginBottom:16}}>
-            <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Frecuencia de pago</label>
-            <div style={{display:"flex",gap:8}}>
-              {["Semanal","Quincenal","Mensual"].map(f=>(
-                <button key={f} onClick={()=>setFrecuencia(f)}
-                  style={{flex:1,padding:"9px 6px",borderRadius:8,border:`1px solid ${frecuencia===f?t.accent:t.border}`,background:frecuencia===f?`${t.accent}15`:"transparent",color:frecuencia===f?t.accent:t.sub,fontWeight:frecuencia===f?700:500,fontSize:12,cursor:"pointer"}}>
-                  {f}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Cuotas */}
-          <div style={{marginBottom:20}}>
-            <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Cantidad de cuotas</label>
-            <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}>
-              {["1","2","3","4","6","8","12"].map(c=>(
-                <button key={c} onClick={()=>setCuotas(c)}
-                  style={{padding:"6px 10px",borderRadius:7,border:`1px solid ${cuotas===c?t.accent:t.border}`,background:cuotas===c?t.accent:"transparent",color:cuotas===c?"#fff":t.sub,fontWeight:600,fontSize:12,cursor:"pointer"}}>
-                  {c}
-                </button>
-              ))}
-            </div>
-            <input type="number" value={cuotas} onChange={e=>setCuotas(e.target.value)} placeholder="Ej: 4"
-              style={{width:"100%",padding:"9px 14px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
-          </div>
-
-          <button onClick={generarPDF}
-            style={{width:"100%",padding:"13px",borderRadius:10,border:"none",background:"#ef4444",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-            <Icon name="pdf" size={18}/>Generar PDF del presupuesto
-          </button>
-
-          {montoN>0&&(
-            <div style={{marginTop:12}}>
-              {guardandoNombre?(
-                <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                  <input value={nombreGuardar} onChange={e=>setNombreGuardar(e.target.value)}
-                    placeholder="Ej: Crédito 100k al 30%" autoFocus
-                    onKeyDown={e=>{if(e.key==="Enter"&&nombreGuardar.trim()){const nuevo={id:Date.now(),nombre:nombreGuardar.trim(),monto,porcentaje,cuotas,frecuencia,tipo,tablaFrancesa,fecha:new Date().toLocaleDateString("es-AR")};const nuevos=[nuevo,...guardados];setGuardados(nuevos);localStorage.setItem("cc_presupuestos",JSON.stringify(nuevos));setNombreGuardar("");setGuardandoNombre(false);}}}
-                    style={{flex:1,padding:"9px 12px",borderRadius:8,border:`1px solid ${t.accent}`,background:t.input,color:t.text,fontSize:13,outline:"none"}}/>
-                  <button onClick={()=>{if(!nombreGuardar.trim())return;const nuevo={id:Date.now(),nombre:nombreGuardar.trim(),monto,porcentaje,cuotas,frecuencia,tipo,tablaFrancesa,fecha:new Date().toLocaleDateString("es-AR")};const nuevos=[nuevo,...guardados];setGuardados(nuevos);localStorage.setItem("cc_presupuestos",JSON.stringify(nuevos));setNombreGuardar("");setGuardandoNombre(false);}}
-                    style={{background:t.accent,color:"#fff",border:"none",borderRadius:8,padding:"9px 14px",fontWeight:700,fontSize:13,cursor:"pointer"}}>Guardar</button>
-                  <button onClick={()=>{setGuardandoNombre(false);setNombreGuardar("");}} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:8,padding:"9px 10px",cursor:"pointer",color:t.sub}}><Icon name="close" size={14}/></button>
-                </div>
-              ):(
-                <button onClick={()=>setGuardandoNombre(true)}
-                  style={{width:"100%",padding:"10px",borderRadius:10,border:`1px solid ${t.accent}`,background:"transparent",color:t.accent,fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-                  💾 Guardar este presupuesto
-                </button>
-              )}
-            </div>
-          )}
+          <div style={{marginBottom:16}}><label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Tipo</label><div style={{display:"flex",gap:8}}>{["Crédito","Venta"].map(op=>(<button key={op} onClick={()=>setTipo(op)} style={{flex:1,padding:"9px",borderRadius:8,border:`1px solid ${tipo===op?t.accent:t.border}`,background:tipo===op?`${t.accent}15`:"transparent",color:tipo===op?t.accent:t.sub,fontWeight:tipo===op?700:500,fontSize:13,cursor:"pointer"}}>{op==="Crédito"?"💳 Crédito":"🛒 Venta"}</button>))}</div></div>
+          <div style={{marginBottom:16}}><label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Sistema de cuotas</label><div style={{display:"flex",gap:8}}><button onClick={()=>setTablaFrancesa(false)} style={{flex:1,padding:"10px 8px",borderRadius:8,border:`2px solid ${!tablaFrancesa?t.accent:t.border}`,background:!tablaFrancesa?`${t.accent}15`:"transparent",color:!tablaFrancesa?t.accent:t.sub,fontWeight:!tablaFrancesa?700:500,fontSize:12,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:16,marginBottom:2}}>📋</div><div>Cuotas fijas</div><div style={{fontSize:10,opacity:0.7,marginTop:2}}>Todas iguales</div></button><button onClick={()=>setTablaFrancesa(true)} style={{flex:1,padding:"10px 8px",borderRadius:8,border:`2px solid ${tablaFrancesa?"#8b5cf6":t.border}`,background:tablaFrancesa?"#8b5cf615":"transparent",color:tablaFrancesa?"#8b5cf6":t.sub,fontWeight:tablaFrancesa?700:500,fontSize:12,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:16,marginBottom:2}}>🏦</div><div>Tabla francesa</div><div style={{fontSize:10,opacity:0.7,marginTop:2}}>Capital + interés</div></button></div></div>
+          <div style={{marginBottom:16}}><label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Monto ($)</label><input type="number" value={monto} onChange={e=>setMonto(e.target.value)} placeholder="Ej: 100000" style={{width:"100%",padding:"10px 14px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:15,outline:"none",boxSizing:"border-box",fontWeight:600}}/></div>
+          <div style={{marginBottom:16}}><label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Interés / Porcentaje (%)</label><div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}>{["10","15","20","25","30","40","50"].map(p=>(<button key={p} onClick={()=>setPorcentaje(p)} style={{padding:"6px 10px",borderRadius:7,border:`1px solid ${porcentaje===p?t.accent:t.border}`,background:porcentaje===p?t.accent:"transparent",color:porcentaje===p?"#fff":t.sub,fontWeight:600,fontSize:12,cursor:"pointer"}}>{p}%</button>))}</div><input type="number" value={porcentaje} onChange={e=>setPorcentaje(e.target.value)} placeholder="Ej: 25" style={{width:"100%",padding:"9px 14px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/></div>
+          <div style={{marginBottom:16}}><label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Frecuencia de pago</label><div style={{display:"flex",gap:8}}>{["Semanal","Quincenal","Mensual"].map(f=>(<button key={f} onClick={()=>setFrecuencia(f)} style={{flex:1,padding:"9px 6px",borderRadius:8,border:`1px solid ${frecuencia===f?t.accent:t.border}`,background:frecuencia===f?`${t.accent}15`:"transparent",color:frecuencia===f?t.accent:t.sub,fontWeight:frecuencia===f?700:500,fontSize:12,cursor:"pointer"}}>{f}</button>))}</div></div>
+          <div style={{marginBottom:20}}><label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Cantidad de cuotas</label><div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}>{["1","2","3","4","6","8","12"].map(c=>(<button key={c} onClick={()=>setCuotas(c)} style={{padding:"6px 10px",borderRadius:7,border:`1px solid ${cuotas===c?t.accent:t.border}`,background:cuotas===c?t.accent:"transparent",color:cuotas===c?"#fff":t.sub,fontWeight:600,fontSize:12,cursor:"pointer"}}>{c}</button>))}</div><input type="number" value={cuotas} onChange={e=>setCuotas(e.target.value)} placeholder="Ej: 4" style={{width:"100%",padding:"9px 14px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/></div>
+          <button onClick={generarPDF} style={{width:"100%",padding:"13px",borderRadius:10,border:"none",background:"#ef4444",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Icon name="pdf" size={18}/>Generar PDF del presupuesto</button>
+          {montoN>0&&(<div style={{marginTop:12}}>{guardandoNombre?(<div style={{display:"flex",gap:8,alignItems:"center"}}><input value={nombreGuardar} onChange={e=>setNombreGuardar(e.target.value)} placeholder="Ej: Crédito 100k al 30%" autoFocus onKeyDown={e=>{if(e.key==="Enter"&&nombreGuardar.trim()){const nuevo={id:Date.now(),nombre:nombreGuardar.trim(),monto,porcentaje,cuotas,frecuencia,tipo,tablaFrancesa,fecha:new Date().toLocaleDateString("es-AR")};const nuevos=[nuevo,...guardados];setGuardados(nuevos);localStorage.setItem("cc_presupuestos",JSON.stringify(nuevos));setNombreGuardar("");setGuardandoNombre(false);}}} style={{flex:1,padding:"9px 12px",borderRadius:8,border:`1px solid ${t.accent}`,background:t.input,color:t.text,fontSize:13,outline:"none"}}/><button onClick={()=>{if(!nombreGuardar.trim())return;const nuevo={id:Date.now(),nombre:nombreGuardar.trim(),monto,porcentaje,cuotas,frecuencia,tipo,tablaFrancesa,fecha:new Date().toLocaleDateString("es-AR")};const nuevos=[nuevo,...guardados];setGuardados(nuevos);localStorage.setItem("cc_presupuestos",JSON.stringify(nuevos));setNombreGuardar("");setGuardandoNombre(false);}} style={{background:t.accent,color:"#fff",border:"none",borderRadius:8,padding:"9px 14px",fontWeight:700,fontSize:13,cursor:"pointer"}}>Guardar</button><button onClick={()=>{setGuardandoNombre(false);setNombreGuardar("");}} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:8,padding:"9px 10px",cursor:"pointer",color:t.sub}}><Icon name="close" size={14}/></button></div>):(<button onClick={()=>setGuardandoNombre(true)} style={{width:"100%",padding:"10px",borderRadius:10,border:`1px solid ${t.accent}`,background:"transparent",color:t.accent,fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>💾 Guardar este presupuesto</button>)}</div>)}
         </div>
-
-        {/* PANEL DERECHO — PREVIEW */}
         <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"24px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
-            <h3 style={{margin:0,fontSize:15,fontWeight:700,color:t.text}}>Vista previa</h3>
-            {tablaFrancesa&&<span style={{background:"#8b5cf615",color:"#8b5cf6",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700}}>🏦 Tabla francesa</span>}
-          </div>
-
-          {!montoN?(
-            <div style={{textAlign:"center",padding:"40px 0",color:t.sub}}>
-              <div style={{fontSize:40,marginBottom:12}}>🧮</div>
-              <div style={{fontSize:13}}>Ingresá el monto y el porcentaje para ver el presupuesto</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}><h3 style={{margin:0,fontSize:15,fontWeight:700,color:t.text}}>Vista previa</h3>{tablaFrancesa&&<span style={{background:"#8b5cf615",color:"#8b5cf6",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700}}>🏦 Tabla francesa</span>}</div>
+          {!montoN?(<div style={{textAlign:"center",padding:"40px 0",color:t.sub}}><div style={{fontSize:40,marginBottom:12}}>🧮</div><div style={{fontSize:13}}>Ingresá el monto y el porcentaje para ver el presupuesto</div></div>):(<>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+              <div style={{background:t.bg,borderRadius:10,padding:"12px 14px",border:`1px solid ${t.border}`}}><div style={{fontSize:10,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Monto</div><div style={{fontSize:17,fontWeight:900,color:t.text}}>{fmt(montoN)}</div></div>
+              <div style={{background:t.bg,borderRadius:10,padding:"12px 14px",border:`1px solid ${t.border}`}}><div style={{fontSize:10,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Valor cuota</div><div style={{fontSize:17,fontWeight:900,color:"#10b981"}}>{fmt(tablaFrancesa?cuotaFrancesaFija:valorCuota)}</div></div>
             </div>
-          ):(
-            <>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
-                <div style={{background:t.bg,borderRadius:10,padding:"12px 14px",border:`1px solid ${t.border}`}}>
-                  <div style={{fontSize:10,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Monto</div>
-                  <div style={{fontSize:17,fontWeight:900,color:t.text}}>{fmt(montoN)}</div>
-                </div>
-                <div style={{background:t.bg,borderRadius:10,padding:"12px 14px",border:`1px solid ${t.border}`}}>
-                  <div style={{fontSize:10,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Valor cuota</div>
-                  <div style={{fontSize:17,fontWeight:900,color:"#10b981"}}>{fmt(tablaFrancesa?cuotaFrancesaFija:valorCuota)}</div>
-                </div>
-              </div>
-
-              {/* CUOTAS FIJAS */}
-              {!tablaFrancesa&&(
-                <div style={{background:t.bg,borderRadius:10,overflow:"hidden",border:`1px solid ${t.border}`}}>
-                  <div style={{padding:"10px 14px",background:`${t.accent}15`,fontSize:12,fontWeight:700,color:t.accent}}>
-                    📅 {cuotasN} cuota{cuotasN!==1?"s":""} {frecuencia.toLowerCase()}{cuotasN!==1?"s":""}
-                  </div>
-                  <table style={{width:"100%",borderCollapse:"collapse"}}>
-                    <thead><tr style={{background:t.bg}}>{["#","Fecha","Monto"].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"center",fontSize:10,fontWeight:700,color:t.sub,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
-                    <tbody>
-                      {cuotasDetalle.map(c=>(
-                        <tr key={c.num} style={{borderTop:`1px solid ${t.border}`}}>
-                          <td style={{padding:"9px 12px",textAlign:"center",fontWeight:700,color:t.text}}>{c.num}</td>
-                          <td style={{padding:"9px 12px",textAlign:"center",color:t.sub}}>{c.fecha}</td>
-                          <td style={{padding:"9px 12px",textAlign:"center",fontWeight:800,color:"#10b981",fontSize:14}}>{fmt(c.valor)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {/* TABLA FRANCESA — desglose completo solo para vos */}
-              {tablaFrancesa&&cuotasFrancesas.length>0&&(
-                <div>
-                  <div style={{background:"#8b5cf610",border:"1px solid #8b5cf630",borderRadius:8,padding:"10px 14px",marginBottom:10,fontSize:11,color:"#8b5cf6",fontWeight:600}}>
-                    🏦 Vista interna — El PDF del cliente solo muestra el monto de cada cuota, sin el desglose.
-                  </div>
-                  <div style={{background:t.bg,borderRadius:10,overflow:"hidden",border:`1px solid #8b5cf630`}}>
-                    <div style={{padding:"10px 14px",background:"#8b5cf615",fontSize:12,fontWeight:700,color:"#8b5cf6"}}>
-                      🏦 Tabla francesa — desglose capital + interés
-                    </div>
-                    <div style={{overflowX:"auto"}}>
-                      <table style={{width:"100%",borderCollapse:"collapse"}}>
-                        <thead>
-                          <tr style={{background:t.bg}}>
-                            {["#","Fecha","Cuota","Capital","Interés","Saldo"].map(h=>(
-                              <th key={h} style={{padding:"7px 10px",textAlign:"center",fontSize:10,fontWeight:700,color:t.sub,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {cuotasFrancesas.map(c=>(
-                            <tr key={c.num} style={{borderTop:`1px solid ${t.border}`}}>
-                              <td style={{padding:"8px 10px",textAlign:"center",fontWeight:700,color:t.text,fontSize:12}}>{c.num}</td>
-                              <td style={{padding:"8px 10px",textAlign:"center",color:t.sub,fontSize:11}}>{c.fecha}</td>
-                              <td style={{padding:"8px 10px",textAlign:"center",fontWeight:800,color:"#8b5cf6",fontSize:12}}>{fmt(c.cuota)}</td>
-                              <td style={{padding:"8px 10px",textAlign:"center",color:"#3b82f6",fontWeight:600,fontSize:12}}>{fmt(c.capital)}</td>
-                              <td style={{padding:"8px 10px",textAlign:"center",color:"#f59e0b",fontWeight:600,fontSize:12}}>{fmt(c.intereses)}</td>
-                              <td style={{padding:"8px 10px",textAlign:"center",color:t.sub,fontSize:11}}>{fmt(c.saldoRestante)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr style={{borderTop:`2px solid ${t.border}`,background:t.bg}}>
-                            <td colSpan={2} style={{padding:"8px 10px",fontWeight:700,color:t.text,fontSize:11}}>TOTALES</td>
-                            <td style={{padding:"8px 10px",textAlign:"center",fontWeight:800,color:"#8b5cf6",fontSize:12}}>{fmt(cuotasFrancesas.reduce((s,c)=>s+c.cuota,0))}</td>
-                            <td style={{padding:"8px 10px",textAlign:"center",fontWeight:800,color:"#3b82f6",fontSize:12}}>{fmt(montoN)}</td>
-                            <td style={{padding:"8px 10px",textAlign:"center",fontWeight:800,color:"#f59e0b",fontSize:12}}>{fmt(cuotasFrancesas.reduce((s,c)=>s+c.intereses,0))}</td>
-                            <td></td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
+            {!tablaFrancesa&&(<div style={{background:t.bg,borderRadius:10,overflow:"hidden",border:`1px solid ${t.border}`}}><div style={{padding:"10px 14px",background:`${t.accent}15`,fontSize:12,fontWeight:700,color:t.accent}}>📅 {cuotasN} cuota{cuotasN!==1?"s":""} {frecuencia.toLowerCase()}{cuotasN!==1?"s":""}</div><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{background:t.bg}}>{["#","Fecha","Monto"].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"center",fontSize:10,fontWeight:700,color:t.sub,textTransform:"uppercase"}}>{h}</th>)}</tr></thead><tbody>{cuotasDetalle.map(c=>(<tr key={c.num} style={{borderTop:`1px solid ${t.border}`}}><td style={{padding:"9px 12px",textAlign:"center",fontWeight:700,color:t.text}}>{c.num}</td><td style={{padding:"9px 12px",textAlign:"center",color:t.sub}}>{c.fecha}</td><td style={{padding:"9px 12px",textAlign:"center",fontWeight:800,color:"#10b981",fontSize:14}}>{fmt(c.valor)}</td></tr>))}</tbody></table></div>)}
+            {tablaFrancesa&&cuotasFrancesas.length>0&&(<div><div style={{background:"#8b5cf610",border:"1px solid #8b5cf630",borderRadius:8,padding:"10px 14px",marginBottom:10,fontSize:11,color:"#8b5cf6",fontWeight:600}}>🏦 Vista interna — El PDF del cliente solo muestra el monto de cada cuota, sin el desglose.</div><div style={{background:t.bg,borderRadius:10,overflow:"hidden",border:`1px solid #8b5cf630`}}><div style={{padding:"10px 14px",background:"#8b5cf615",fontSize:12,fontWeight:700,color:"#8b5cf6"}}>🏦 Tabla francesa — desglose capital + interés</div><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{background:t.bg}}>{["#","Fecha","Cuota","Capital","Interés","Saldo"].map(h=>(<th key={h} style={{padding:"7px 10px",textAlign:"center",fontSize:10,fontWeight:700,color:t.sub,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead><tbody>{cuotasFrancesas.map(c=>(<tr key={c.num} style={{borderTop:`1px solid ${t.border}`}}><td style={{padding:"8px 10px",textAlign:"center",fontWeight:700,color:t.text,fontSize:12}}>{c.num}</td><td style={{padding:"8px 10px",textAlign:"center",color:t.sub,fontSize:11}}>{c.fecha}</td><td style={{padding:"8px 10px",textAlign:"center",fontWeight:800,color:"#8b5cf6",fontSize:12}}>{fmt(c.cuota)}</td><td style={{padding:"8px 10px",textAlign:"center",color:"#3b82f6",fontWeight:600,fontSize:12}}>{fmt(c.capital)}</td><td style={{padding:"8px 10px",textAlign:"center",color:"#f59e0b",fontWeight:600,fontSize:12}}>{fmt(c.intereses)}</td><td style={{padding:"8px 10px",textAlign:"center",color:t.sub,fontSize:11}}>{fmt(c.saldoRestante)}</td></tr>))}</tbody><tfoot><tr style={{borderTop:`2px solid ${t.border}`,background:t.bg}}><td colSpan={2} style={{padding:"8px 10px",fontWeight:700,color:t.text,fontSize:11}}>TOTALES</td><td style={{padding:"8px 10px",textAlign:"center",fontWeight:800,color:"#8b5cf6",fontSize:12}}>{fmt(cuotasFrancesas.reduce((s,c)=>s+c.cuota,0))}</td><td style={{padding:"8px 10px",textAlign:"center",fontWeight:800,color:"#3b82f6",fontSize:12}}>{fmt(montoN)}</td><td style={{padding:"8px 10px",textAlign:"center",fontWeight:800,color:"#f59e0b",fontSize:12}}>{fmt(cuotasFrancesas.reduce((s,c)=>s+c.intereses,0))}</td><td></td></tr></tfoot></table></div></div></div>)}
+          </>)}
         </div>
       </div>
-
-      {/* PRESUPUESTOS GUARDADOS */}
-      {guardados.length>0&&(
-        <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"22px 24px",marginTop:20}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-            <div>
-              <h3 style={{margin:"0 0 3px",fontSize:16,fontWeight:800,color:t.text}}>💾 Presupuestos guardados</h3>
-              <p style={{margin:0,fontSize:12,color:t.sub}}>Tocá uno para cargarlo y generar el PDF al toque</p>
-            </div>
-            <span style={{background:`${t.accent}15`,color:t.accent,padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:700}}>{guardados.length} guardado{guardados.length!==1?"s":""}</span>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:10}}>
-            {guardados.map(g=>{
-              const gMontoN=+g.monto||0;
-              const gTotal=gMontoN+(gMontoN*(+g.porcentaje/100));
-              const gCuota=gTotal/(+g.cuotas||1);
-              return(
-                <div key={g.id} style={{background:t.bg,borderRadius:10,border:`1px solid ${t.border}`,padding:"14px 16px",display:"flex",flexDirection:"column",gap:10}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                    <div>
-                      <div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:3}}>{g.nombre}</div>
-                      <div style={{fontSize:10,color:t.sub,display:"flex",gap:6,alignItems:"center"}}>
-                        <span>{g.tipo} · {g.fecha}</span>
-                        {g.tablaFrancesa&&<span style={{background:"#8b5cf615",color:"#8b5cf6",padding:"1px 6px",borderRadius:10,fontWeight:700}}>🏦 Francesa</span>}
-                      </div>
-                    </div>
-                    <button onClick={()=>{if(window.confirm(`¿Eliminar "${g.nombre}"?`)){const nuevos=guardados.filter(x=>x.id!==g.id);setGuardados(nuevos);localStorage.setItem("cc_presupuestos",JSON.stringify(nuevos));}}} style={{background:"none",border:"none",cursor:"pointer",color:t.sub,padding:2}}><Icon name="trash" size={13}/></button>
-                  </div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
-                    {[{label:"Monto",value:fmt(gMontoN),color:t.text},{label:"Interés",value:`${g.porcentaje}%`,color:t.accent},{label:"Cuota",value:fmt(gCuota),color:"#10b981"}].map(({label,value,color})=>(
-                      <div key={label} style={{background:t.card,borderRadius:6,padding:"6px 8px",textAlign:"center"}}>
-                        <div style={{color:t.sub,fontSize:9,textTransform:"uppercase",marginBottom:2}}>{label}</div>
-                        <div style={{fontWeight:800,color,fontSize:12}}>{value}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{fontSize:11,color:t.sub,textAlign:"center"}}>{g.cuotas} cuota{+g.cuotas!==1?"s":""} {g.frecuencia.toLowerCase()}{+g.cuotas!==1?"s":""} · Total: {fmt(gTotal)}</div>
-                  <div style={{display:"flex",gap:8}}>
-                    <button onClick={()=>{setMonto(g.monto);setPorcentaje(g.porcentaje);setCuotas(g.cuotas);setFrecuencia(g.frecuencia);setTipo(g.tipo);setTablaFrancesa(g.tablaFrancesa||false);}}
-                      style={{flex:1,background:`${t.accent}15`,color:t.accent,border:`1px solid ${t.accent}30`,borderRadius:8,padding:"8px",fontWeight:700,fontSize:12,cursor:"pointer"}}>
-                      📥 Cargar
-                    </button>
-                    <button onClick={()=>{setMonto(g.monto);setPorcentaje(g.porcentaje);setCuotas(g.cuotas);setFrecuencia(g.frecuencia);setTipo(g.tipo);setTablaFrancesa(g.tablaFrancesa||false);setTimeout(()=>generarPDF(),150);}}
-                      style={{flex:1,background:"#ef4444",color:"#fff",border:"none",borderRadius:8,padding:"8px",fontWeight:700,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
-                      <Icon name="pdf" size={12}/>PDF directo
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {guardados.length>0&&(<div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"22px 24px",marginTop:20}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><div><h3 style={{margin:"0 0 3px",fontSize:16,fontWeight:800,color:t.text}}>💾 Presupuestos guardados</h3><p style={{margin:0,fontSize:12,color:t.sub}}>Tocá uno para cargarlo y generar el PDF al toque</p></div><span style={{background:`${t.accent}15`,color:t.accent,padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:700}}>{guardados.length} guardado{guardados.length!==1?"s":""}</span></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:10}}>{guardados.map(g=>{const gMontoN=+g.monto||0;const gTotal=gMontoN+(gMontoN*(+g.porcentaje/100));const gCuota=gTotal/(+g.cuotas||1);return(<div key={g.id} style={{background:t.bg,borderRadius:10,border:`1px solid ${t.border}`,padding:"14px 16px",display:"flex",flexDirection:"column",gap:10}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:3}}>{g.nombre}</div><div style={{fontSize:10,color:t.sub,display:"flex",gap:6,alignItems:"center"}}><span>{g.tipo} · {g.fecha}</span>{g.tablaFrancesa&&<span style={{background:"#8b5cf615",color:"#8b5cf6",padding:"1px 6px",borderRadius:10,fontWeight:700}}>🏦 Francesa</span>}</div></div><button onClick={()=>{if(window.confirm(`¿Eliminar "${g.nombre}"?`)){const nuevos=guardados.filter(x=>x.id!==g.id);setGuardados(nuevos);localStorage.setItem("cc_presupuestos",JSON.stringify(nuevos));}}} style={{background:"none",border:"none",cursor:"pointer",color:t.sub,padding:2}}><Icon name="trash" size={13}/></button></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>{[{label:"Monto",value:fmt(gMontoN),color:t.text},{label:"Interés",value:`${g.porcentaje}%`,color:t.accent},{label:"Cuota",value:fmt(gCuota),color:"#10b981"}].map(({label,value,color})=>(<div key={label} style={{background:t.card,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{color:t.sub,fontSize:9,textTransform:"uppercase",marginBottom:2}}>{label}</div><div style={{fontWeight:800,color,fontSize:12}}>{value}</div></div>))}</div><div style={{fontSize:11,color:t.sub,textAlign:"center"}}>{g.cuotas} cuota{+g.cuotas!==1?"s":""} {g.frecuencia.toLowerCase()}{+g.cuotas!==1?"s":""} · Total: {fmt(gTotal)}</div><div style={{display:"flex",gap:8}}><button onClick={()=>{setMonto(g.monto);setPorcentaje(g.porcentaje);setCuotas(g.cuotas);setFrecuencia(g.frecuencia);setTipo(g.tipo);setTablaFrancesa(g.tablaFrancesa||false);}} style={{flex:1,background:`${t.accent}15`,color:t.accent,border:`1px solid ${t.accent}30`,borderRadius:8,padding:"8px",fontWeight:700,fontSize:12,cursor:"pointer"}}>📥 Cargar</button><button onClick={()=>{setMonto(g.monto);setPorcentaje(g.porcentaje);setCuotas(g.cuotas);setFrecuencia(g.frecuencia);setTipo(g.tipo);setTablaFrancesa(g.tablaFrancesa||false);setTimeout(()=>generarPDF(),150);}} style={{flex:1,background:"#ef4444",color:"#fff",border:"none",borderRadius:8,padding:"8px",fontWeight:700,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:4}}><Icon name="pdf" size={12}/>PDF directo</button></div></div>);})}</div></div>)}
     </div>
   );
 };

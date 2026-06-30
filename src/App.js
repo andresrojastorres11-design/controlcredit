@@ -2934,9 +2934,48 @@ const Papelera=({setCreditos,setProductos,t})=>{
 
 // ── APP ROOT ──────────────────────────────────────────────────────────────────
 // ── APP ROOT ──────────────────────────────────────────────────────────────────
+// ── TARJETA COBRO MÓVIL ───────────────────────────────────────────────────────
+const TarjetaCobro=({c,colorBorde,clients,t,onCobrar})=>{
+  const clienteInfo=clients.find(cl=>cl.id===c.clienteId);
+  const diffLabel=c.diff===0?"HOY":c.diff===-1?"Ayer":c.diff>0?`En ${c.diff}d`:`Hace ${Math.abs(c.diff)}d`;
+  const colDiff=c.diff===0?"#10b981":c.diff>0?"#3b82f6":"#ef4444";
+  return(
+    <div style={{background:t.card,borderRadius:14,border:`2px solid ${colorBorde}`,padding:"14px 16px",marginBottom:10}}>
+      <div style={{marginBottom:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap"}}>
+          <span style={{fontWeight:800,color:t.text,fontSize:15}}>{c.clienteNombre}</span>
+          {c._tipo==="producto"
+            ?<span style={{fontSize:10,background:"#8b5cf6",color:"#fff",borderRadius:20,padding:"2px 8px",fontWeight:700}}>🛒 {c._etiqueta}</span>
+            :<span style={{fontSize:10,background:"#3b82f6",color:"#fff",borderRadius:20,padding:"2px 8px",fontWeight:700}}>💳 Crédito</span>}
+        </div>
+        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontSize:13,fontWeight:900,color:t.text}}>{fmt(c.proxCuota?.valorCuotaEditado||c.valorCuota)}</span>
+          <span style={{fontSize:12,fontWeight:700,color:colDiff,background:`${colDiff}15`,padding:"2px 8px",borderRadius:20}}>{diffLabel}</span>
+          <span style={{fontSize:11,color:t.sub}}>{c.cuotasPagadas}/{c.cuotas} cuotas</span>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={()=>onCobrar(c)}
+          style={{flex:1,background:"#10b981",color:"#fff",border:"none",borderRadius:10,padding:"12px",fontWeight:800,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+          ✓ Cobrado
+        </button>
+        {clienteInfo?.tel&&(
+          <a href={`https://wa.me/54${clienteInfo.tel.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${clienteInfo.nombre}, te escribo por el pago de hoy.`)}`}
+            target="_blank" rel="noopener noreferrer"
+            style={{background:"#25D366",color:"#fff",borderRadius:10,padding:"12px 16px",fontWeight:700,fontSize:14,textDecoration:"none",display:"flex",alignItems:"center",gap:5}}>
+            <Icon name="whatsapp" size={18}/>
+          </a>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export default function App(){
   const [dark,setDark]=useState(true);
   const [screen,setScreen]=useState("dashboard");
+  const [fabOpen,setFabOpen]=useState(false);
+  const [fabModal,setFabModal]=useState(null);
   const [allClients,setAllClients]=useState([]);
   const [allCreditos,setAllCreditos]=useState([]);
   const [allProductos,setAllProductos]=useState([]);
@@ -3026,9 +3065,6 @@ export default function App(){
 
   // ── MODO MÓVIL ────────────────────────────────────────────────────────────────
   if(mobile){
-    // ── FAB state ──
-    const [fabOpen,setFabOpen]=React.useState(false);
-    const [fabModal,setFabModal]=React.useState(null); // "cliente"|"credito"|"producto"|"contado"
 
     // ── PANTALLA COBROS DEL DÍA ──
     const hoyMob=new Date();hoyMob.setHours(0,0,0,0);
@@ -3073,44 +3109,6 @@ export default function App(){
       await sb.from(tabla).update(upd).eq("id",c.id);
       if(c._tipo==="producto")setProductos(ps=>ps.map(x=>x.id===c.id?{...x,cuotasPagadas:pagadas,saldoCobrado:totalCobrado,saldoPendiente:pendiente,proximoPago:proxPend?.fechaVenc||"",estado:nuevoEstado,detalleCuotas:det}:x));
       else setCreditos(cs=>cs.map(x=>x.id===c.id?{...x,cuotasPagadas:pagadas,saldoCobrado:totalCobrado,saldoPendiente:pendiente,proximoPago:proxPend?.fechaVenc||"",estado:nuevoEstado,detalleCuotas:det}:x));
-    };
-
-    const TarjetaCobro=({c,colorBorde})=>{
-      const clienteInfo=clients.find(cl=>cl.id===c.clienteId);
-      const diffLabel=c.diff===0?"HOY":c.diff===-1?"Ayer":c.diff>0?`En ${c.diff}d`:`Hace ${Math.abs(c.diff)}d`;
-      const colDiff=c.diff===0?"#10b981":c.diff>0?"#3b82f6":"#ef4444";
-      return(
-        <div style={{background:t.card,borderRadius:14,border:`2px solid ${colorBorde}`,padding:"14px 16px",marginBottom:10}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-            <div style={{flex:1}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap"}}>
-                <span style={{fontWeight:800,color:t.text,fontSize:15}}>{c.clienteNombre}</span>
-                {c._tipo==="producto"
-                  ?<span style={{fontSize:10,background:"#8b5cf6",color:"#fff",borderRadius:20,padding:"2px 8px",fontWeight:700}}>🛒 {c._etiqueta}</span>
-                  :<span style={{fontSize:10,background:"#3b82f6",color:"#fff",borderRadius:20,padding:"2px 8px",fontWeight:700}}>💳 Crédito</span>}
-              </div>
-              <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                <span style={{fontSize:13,fontWeight:900,color:t.text}}>{fmt(c.proxCuota?.valorCuotaEditado||c.valorCuota)}</span>
-                <span style={{fontSize:12,fontWeight:700,color:colDiff,background:`${colDiff}15`,padding:"2px 8px",borderRadius:20}}>{diffLabel}</span>
-                <span style={{fontSize:11,color:t.sub}}>{c.cuotasPagadas}/{c.cuotas} cuotas</span>
-              </div>
-            </div>
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={()=>marcarCobradoMob(c)}
-              style={{flex:1,background:"#10b981",color:"#fff",border:"none",borderRadius:10,padding:"12px",fontWeight:800,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-              ✓ Cobrado
-            </button>
-            {clienteInfo?.tel&&(
-              <a href={`https://wa.me/54${clienteInfo.tel.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${clienteInfo.nombre}, te escribo por el pago de hoy.`)}`}
-                target="_blank" rel="noopener noreferrer"
-                style={{background:"#25D366",color:"#fff",borderRadius:10,padding:"12px 16px",fontWeight:700,fontSize:14,textDecoration:"none",display:"flex",alignItems:"center",gap:5}}>
-                <Icon name="whatsapp" size={18}/>
-              </a>
-            )}
-          </div>
-        </div>
-      );
     };
 
     return(
@@ -3169,7 +3167,7 @@ export default function App(){
                     <span style={{width:8,height:8,borderRadius:"50%",background:"#ef4444",display:"inline-block"}}/>
                     VENCIDOS — {cobrosVencidos.length}
                   </div>
-                  {cobrosVencidos.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} colorBorde="#ef4444"/>)}
+                  {cobrosVencidos.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} clients={clients} t={t} onCobrar={marcarCobradoMob} colorBorde="#ef4444"/>)}
                 </div>
               )}
 
@@ -3179,7 +3177,7 @@ export default function App(){
                     <span style={{width:8,height:8,borderRadius:"50%",background:"#10b981",display:"inline-block"}}/>
                     VENCEN HOY — {cobrosHoy.length}
                   </div>
-                  {cobrosHoy.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} colorBorde="#10b981"/>)}
+                  {cobrosHoy.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} clients={clients} t={t} onCobrar={marcarCobradoMob} colorBorde="#10b981"/>)}
                 </div>
               )}
 
@@ -3189,7 +3187,7 @@ export default function App(){
                     <span style={{width:8,height:8,borderRadius:"50%",background:"#3b82f6",display:"inline-block"}}/>
                     PRÓXIMOS (1-3 DÍAS) — {cobrosMañana.length}
                   </div>
-                  {cobrosMañana.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} colorBorde="#3b82f6"/>)}
+                  {cobrosMañana.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} clients={clients} t={t} onCobrar={marcarCobradoMob} colorBorde="#3b82f6"/>)}
                 </div>
               )}
             </div>

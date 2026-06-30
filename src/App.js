@@ -3026,8 +3026,96 @@ export default function App(){
 
   // ── MODO MÓVIL ────────────────────────────────────────────────────────────────
   if(mobile){
+    // ── FAB state ──
+    const [fabOpen,setFabOpen]=React.useState(false);
+    const [fabModal,setFabModal]=React.useState(null); // "cliente"|"credito"|"producto"|"contado"
+
+    // ── PANTALLA COBROS DEL DÍA ──
+    const hoyMob=new Date();hoyMob.setHours(0,0,0,0);
+    const fuentePagosMob=[
+      ...creditos.filter(c=>c.estado!=="Finalizado").map(c=>({...c,_tipo:"credito"})),
+      ...productos.filter(p=>p.estado!=="Finalizado").map(p=>({...p,monto:p.inversion,totalCobrar:p.precioFinanciado,historial:[],_tipo:"producto",_etiqueta:p.producto})),
+    ];
+    const cobrosDia=fuentePagosMob.map(c=>{
+      const det=c.detalleCuotas||[];
+      const pendientes=det.filter(d=>d.estado==="Pendiente"||d.estado==="Parcial").sort((a,b)=>new Date(a.fechaVenc)-new Date(b.fechaVenc));
+      if(!pendientes.length)return null;
+      const prox=pendientes[0];
+      const proxFecha=prox.fechaVenc?new Date(prox.fechaVenc):null;
+      if(proxFecha)proxFecha.setHours(0,0,0,0);
+      const diff=proxFecha?Math.round((proxFecha-hoyMob)/(1000*60*60*24)):null;
+      if(diff===null||diff>3)return null;
+      const cat=diff<-15?"moroso":diff<0?"vencido":"aldia";
+      return{...c,proxCuota:prox,diff,cat,pendientesCount:pendientes.length};
+    }).filter(Boolean).sort((a,b)=>a.diff-b.diff);
+
+    const cobrosHoy=cobrosDia.filter(c=>c.diff===0);
+    const cobrosVencidos=cobrosDia.filter(c=>c.diff<0);
+    const cobrosMañana=cobrosDia.filter(c=>c.diff>0&&c.diff<=3);
+    const totalHoy=cobrosHoy.reduce((s,c)=>s+(c.proxCuota?.valorCuotaEditado||c.valorCuota||0),0);
+
+    const marcarCobradoMob=async(c)=>{
+      if(!window.confirm(`¿Marcar cuota de ${fmt(c.proxCuota?.valorCuotaEditado||c.valorCuota)} como pagada?`))return;
+      const det=[...(c.detalleCuotas||[])];
+      const idx=det.findIndex(d=>d.estado==="Pendiente"||d.estado==="Parcial");
+      if(idx===-1)return;
+      const vc=det[idx].valorCuotaEditado||c.valorCuota;
+      det[idx]={...det[idx],montoPagado:vc,estado:"Pagada",fechaPago:new Date().toLocaleDateString("es-AR")};
+      const totalCobrado=det.reduce((s,d)=>s+d.montoPagado,0);
+      const nuevoTotal=det.reduce((s,d)=>s+(d.valorCuotaEditado||c.valorCuota),0);
+      const pendiente=Math.max(0,nuevoTotal-totalCobrado);
+      const pagadas=det.filter(d=>d.estado==="Pagada").length;
+      const proxPend=det.find(d=>d.estado!=="Pagada");
+      const nuevoEstado=pendiente<=0?"Finalizado":"Al día";
+      const tabla=c._tipo==="producto"?"productos":"creditos";
+      const upd={cuotas_pagadas:pagadas,saldo_cobrado:totalCobrado,saldo_pendiente:pendiente,proximo_pago:proxPend?.fechaVenc||"",estado:nuevoEstado,detalle_cuotas:det};
+      if(c._tipo!=="producto")upd.historial=[...(c.historial||[]),{tipo:"pago_completo",cuota:idx+1,monto:vc,fecha:new Date().toLocaleDateString("es-AR")}];
+      await sb.from(tabla).update(upd).eq("id",c.id);
+      if(c._tipo==="producto")setProductos(ps=>ps.map(x=>x.id===c.id?{...x,cuotasPagadas:pagadas,saldoCobrado:totalCobrado,saldoPendiente:pendiente,proximoPago:proxPend?.fechaVenc||"",estado:nuevoEstado,detalleCuotas:det}:x));
+      else setCreditos(cs=>cs.map(x=>x.id===c.id?{...x,cuotasPagadas:pagadas,saldoCobrado:totalCobrado,saldoPendiente:pendiente,proximoPago:proxPend?.fechaVenc||"",estado:nuevoEstado,detalleCuotas:det}:x));
+    };
+
+    const TarjetaCobro=({c,colorBorde})=>{
+      const clienteInfo=clients.find(cl=>cl.id===c.clienteId);
+      const diffLabel=c.diff===0?"HOY":c.diff===-1?"Ayer":c.diff>0?`En ${c.diff}d`:`Hace ${Math.abs(c.diff)}d`;
+      const colDiff=c.diff===0?"#10b981":c.diff>0?"#3b82f6":"#ef4444";
+      return(
+        <div style={{background:t.card,borderRadius:14,border:`2px solid ${colorBorde}`,padding:"14px 16px",marginBottom:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+            <div style={{flex:1}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap"}}>
+                <span style={{fontWeight:800,color:t.text,fontSize:15}}>{c.clienteNombre}</span>
+                {c._tipo==="producto"
+                  ?<span style={{fontSize:10,background:"#8b5cf6",color:"#fff",borderRadius:20,padding:"2px 8px",fontWeight:700}}>🛒 {c._etiqueta}</span>
+                  :<span style={{fontSize:10,background:"#3b82f6",color:"#fff",borderRadius:20,padding:"2px 8px",fontWeight:700}}>💳 Crédito</span>}
+              </div>
+              <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                <span style={{fontSize:13,fontWeight:900,color:t.text}}>{fmt(c.proxCuota?.valorCuotaEditado||c.valorCuota)}</span>
+                <span style={{fontSize:12,fontWeight:700,color:colDiff,background:`${colDiff}15`,padding:"2px 8px",borderRadius:20}}>{diffLabel}</span>
+                <span style={{fontSize:11,color:t.sub}}>{c.cuotasPagadas}/{c.cuotas} cuotas</span>
+              </div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>marcarCobradoMob(c)}
+              style={{flex:1,background:"#10b981",color:"#fff",border:"none",borderRadius:10,padding:"12px",fontWeight:800,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+              ✓ Cobrado
+            </button>
+            {clienteInfo?.tel&&(
+              <a href={`https://wa.me/54${clienteInfo.tel.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${clienteInfo.nombre}, te escribo por el pago de hoy.`)}`}
+                target="_blank" rel="noopener noreferrer"
+                style={{background:"#25D366",color:"#fff",borderRadius:10,padding:"12px 16px",fontWeight:700,fontSize:14,textDecoration:"none",display:"flex",alignItems:"center",gap:5}}>
+                <Icon name="whatsapp" size={18}/>
+              </a>
+            )}
+          </div>
+        </div>
+      );
+    };
+
     return(
       <div style={{display:"flex",flexDirection:"column",minHeight:"100vh",fontFamily:"'Segoe UI',system-ui,sans-serif",background:t.bg,color:t.text}}>
+
         {/* Header móvil */}
         <header style={{background:t.sidebar,padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 12px rgba(0,0,0,0.3)"}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -3043,7 +3131,70 @@ export default function App(){
         </header>
 
         {/* Contenido móvil */}
-        <main style={{flex:1,padding:"14px 14px 80px",overflowY:"auto"}}>
+        <main style={{flex:1,padding:"14px 14px 90px",overflowY:"auto"}}>
+
+          {/* ── PANTALLA COBROS DEL DÍA ── */}
+          {screen==="cobros"&&(
+            <div>
+              <div style={{marginBottom:16}}>
+                <h1 style={{fontSize:20,fontWeight:900,color:t.text,margin:"0 0 2px"}}>☀️ Cobros del día</h1>
+                <p style={{color:t.sub,margin:0,fontSize:12}}>{new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"})}</p>
+              </div>
+
+              {/* Resumen rápido */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
+                <div style={{background:"#10b98115",border:"1px solid #10b98130",borderRadius:12,padding:"14px"}}>
+                  <div style={{fontSize:10,color:"#10b981",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Cobrar HOY</div>
+                  <div style={{fontSize:22,fontWeight:900,color:"#10b981"}}>{fmt(totalHoy)}</div>
+                  <div style={{fontSize:11,color:t.sub,marginTop:2}}>{cobrosHoy.length} cliente{cobrosHoy.length!==1?"s":""}</div>
+                </div>
+                <div style={{background:"#ef444415",border:"1px solid #ef444430",borderRadius:12,padding:"14px"}}>
+                  <div style={{fontSize:10,color:"#ef4444",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Vencidos</div>
+                  <div style={{fontSize:22,fontWeight:900,color:"#ef4444"}}>{cobrosVencidos.length}</div>
+                  <div style={{fontSize:11,color:t.sub,marginTop:2}}>sin cobrar</div>
+                </div>
+              </div>
+
+              {cobrosDia.length===0&&(
+                <div style={{textAlign:"center",padding:"50px 0",color:t.sub}}>
+                  <div style={{fontSize:48,marginBottom:12}}>🎉</div>
+                  <div style={{fontSize:16,fontWeight:700,color:t.text}}>Sin cobros pendientes hoy</div>
+                  <div style={{fontSize:13,marginTop:6}}>Todos al día por los próximos 3 días</div>
+                </div>
+              )}
+
+              {cobrosVencidos.length>0&&(
+                <div style={{marginBottom:18}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#ef4444",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{width:8,height:8,borderRadius:"50%",background:"#ef4444",display:"inline-block"}}/>
+                    VENCIDOS — {cobrosVencidos.length}
+                  </div>
+                  {cobrosVencidos.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} colorBorde="#ef4444"/>)}
+                </div>
+              )}
+
+              {cobrosHoy.length>0&&(
+                <div style={{marginBottom:18}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#10b981",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{width:8,height:8,borderRadius:"50%",background:"#10b981",display:"inline-block"}}/>
+                    VENCEN HOY — {cobrosHoy.length}
+                  </div>
+                  {cobrosHoy.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} colorBorde="#10b981"/>)}
+                </div>
+              )}
+
+              {cobrosMañana.length>0&&(
+                <div style={{marginBottom:18}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#3b82f6",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{width:8,height:8,borderRadius:"50%",background:"#3b82f6",display:"inline-block"}}/>
+                    PRÓXIMOS (1-3 DÍAS) — {cobrosMañana.length}
+                  </div>
+                  {cobrosMañana.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} colorBorde="#3b82f6"/>)}
+                </div>
+              )}
+            </div>
+          )}
+
           {screen==="dashboard"&&<Dashboard clients={clients} creditos={creditos} setCreditos={setCreditos} productos={productos} setProductos={setProductos} ventasContado={ventasContado} t={t}/>}
           {screen==="clientes"&&<Clientes clients={clients} setClients={setClients} creditos={creditos} setCreditos={setCreditos} productos={productos} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
           {screen==="creditos"&&<Creditos creditos={creditos} setCreditos={setCreditos} clients={clients} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
@@ -3054,54 +3205,92 @@ export default function App(){
           {screen==="presupuesto"&&<Presupuesto t={t}/>}
           {screen==="papelera"&&<Papelera setCreditos={setCreditos} setProductos={setProductos} t={t}/>}
         </main>
+
+        {/* ── BARRA NAV INFERIOR ── */}
         <nav style={{position:"fixed",bottom:0,left:0,right:0,background:t.sidebar,borderTop:"1px solid #ffffff15",display:"flex",justifyContent:"space-around",padding:"6px 0 8px",zIndex:200,boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
           {[
-            {id:"dashboard",label:"Inicio",icon:"dashboard"},
+            {id:"cobros",label:"Cobros",icon:"coin"},
             {id:"clientes",label:"Clientes",icon:"users"},
+            {id:"dashboard",label:"Dashboard",icon:"dashboard"},
             {id:"creditos",label:"Créditos",icon:"creditos"},
-            {id:"productos",label:"Ventas",icon:"productos"},
             {id:"alertas",label:"Alertas",icon:"alert"},
           ].map(n=>(
-            <button key={n.id} onClick={()=>setScreen(n.id)}
+            <button key={n.id} onClick={()=>{setScreen(n.id);setFabOpen(false);}}
               style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"4px 8px",background:"none",border:"none",cursor:"pointer",color:screen===n.id?t.accent:t.sidebarText,flex:1,position:"relative"}}>
-              <Icon name={n.icon} size={20}/>
+              {n.id==="cobros"&&cobrosHoy.length>0&&screen!=="cobros"
+                ?<div style={{position:"relative"}}><Icon name={n.icon} size={20}/><span style={{position:"absolute",top:-4,right:-6,background:"#10b981",color:"#fff",borderRadius:10,padding:"0 4px",fontSize:9,fontWeight:700}}>{cobrosHoy.length}</span></div>
+                :<Icon name={n.icon} size={20}/>}
               <span style={{fontSize:9,fontWeight:screen===n.id?700:400,whiteSpace:"nowrap"}}>{n.label}</span>
-              {n.id==="alertas"&&alertCount>0&&<span style={{position:"absolute",top:0,right:"25%",background:"#ef4444",color:"#fff",borderRadius:10,padding:"0 4px",fontSize:9,fontWeight:700}}>{alertCount}</span>}
+              {n.id==="alertas"&&alertCount>0&&<span style={{position:"absolute",top:0,right:"20%",background:"#ef4444",color:"#fff",borderRadius:10,padding:"0 4px",fontSize:9,fontWeight:700}}>{alertCount}</span>}
             </button>
           ))}
-          {/* Menú más */}
-          <button onClick={()=>setScreen(["usuarios","papelera","presupuesto","cartera"].includes(screen)?"dashboard":"mas")}
-            style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"4px 8px",background:"none",border:"none",cursor:"pointer",color:["usuarios","papelera","presupuesto","cartera","mas"].includes(screen)?t.accent:t.sidebarText,flex:1}}>
+          <button onClick={()=>setFabOpen(o=>!o)}
+            style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"4px 8px",background:"none",border:"none",cursor:"pointer",color:fabOpen?t.accent:t.sidebarText,flex:1}}>
             <Icon name="menu" size={20}/>
             <span style={{fontSize:9,fontWeight:400}}>Más</span>
           </button>
         </nav>
 
-        {/* Menú flotante "Más" con opciones extra */}
-        {(screen==="mas"||["usuarios","papelera","presupuesto","cartera"].includes(screen))&&(
-          <div style={{position:"fixed",bottom:70,right:14,zIndex:300,display:"flex",flexDirection:"column",gap:8}}>
-            <button onClick={()=>setScreen("presupuesto")}
-              style={{background:screen==="presupuesto"?t.accent:t.card,color:screen==="presupuesto"?"#fff":t.text,border:`1px solid ${t.border}`,borderRadius:12,padding:"10px 16px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 4px 16px rgba(0,0,0,0.2)"}}>
-              🧮 Presupuesto
-            </button>
-            <button onClick={()=>setScreen("cartera")}
-              style={{background:screen==="cartera"?t.accent:t.card,color:screen==="cartera"?"#fff":t.text,border:`1px solid ${t.border}`,borderRadius:12,padding:"10px 16px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 4px 16px rgba(0,0,0,0.2)"}}>
-              💼 Cartera
-            </button>
-            <button onClick={()=>setScreen("papelera")}
-              style={{background:screen==="papelera"?t.accent:t.card,color:screen==="papelera"?"#fff":t.text,border:`1px solid ${t.border}`,borderRadius:12,padding:"10px 16px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 4px 16px rgba(0,0,0,0.2)"}}>
-              🗑 Papelera
-            </button>
-            {esAdmin&&<button onClick={()=>setScreen("usuarios")}
-              style={{background:screen==="usuarios"?t.accent:t.card,color:screen==="usuarios"?"#fff":t.text,border:`1px solid ${t.border}`,borderRadius:12,padding:"10px 16px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 4px 16px rgba(0,0,0,0.2)"}}>
-              👥 Usuarios
-            </button>}
-            <button onClick={()=>{setLoggedIn(false);setUsuarioActual(null);setAllClients([]);setAllCreditos([]);setAllProductos([]);}}
-              style={{background:"#ef4444",color:"#fff",border:"none",borderRadius:12,padding:"10px 16px",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6,boxShadow:"0 4px 16px rgba(239,68,68,0.4)"}}>
-              <Icon name="logout" size={15}/>Cerrar sesión
-            </button>
-          </div>
+        {/* ── FAB — Botón flotante agregar ── */}
+        {!fabOpen&&(
+          <button
+            onClick={()=>setFabOpen(true)}
+            style={{position:"fixed",bottom:72,right:16,zIndex:300,width:52,height:52,borderRadius:"50%",background:t.accent,color:"#fff",border:"none",cursor:"pointer",boxShadow:"0 4px 20px rgba(59,130,246,0.5)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,fontWeight:300,transition:"transform 0.2s"}}
+            onTouchStart={e=>e.currentTarget.style.transform="scale(0.92)"}
+            onTouchEnd={e=>e.currentTarget.style.transform="scale(1)"}>
+            +
+          </button>
         )}
+
+        {/* ── FAB ABIERTO — opciones ── */}
+        {fabOpen&&(
+          <>
+            {/* Overlay para cerrar */}
+            <div onClick={()=>setFabOpen(false)} style={{position:"fixed",inset:0,zIndex:290,background:"rgba(0,0,0,0.4)",backdropFilter:"blur(2px)"}}/>
+
+            {/* Acciones rápidas agregar */}
+            <div style={{position:"fixed",bottom:72,right:16,zIndex:300,display:"flex",flexDirection:"column",gap:10,alignItems:"flex-end"}}>
+              {[
+                {label:"Nuevo cliente",icon:"👤",color:"#10b981",action:()=>{setScreen("clientes");setFabOpen(false);}},
+                {label:"Nuevo crédito",icon:"💳",color:"#3b82f6",action:()=>{setScreen("creditos");setFabOpen(false);}},
+                {label:"Nueva venta financiada",icon:"🛒",color:"#8b5cf6",action:()=>{setScreen("productos");setFabOpen(false);}},
+                {label:"Venta de contado",icon:"💵",color:"#f59e0b",action:()=>{setScreen("productos");setFabOpen(false);}},
+              ].map((op,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:10,animation:`fadeSlideUp 0.15s ease ${i*0.04}s both`}}>
+                  <span style={{background:t.card,color:t.text,borderRadius:10,padding:"8px 14px",fontWeight:700,fontSize:13,boxShadow:"0 2px 12px rgba(0,0,0,0.2)",border:`1px solid ${t.border}`,whiteSpace:"nowrap"}}>{op.label}</span>
+                  <button onClick={op.action}
+                    style={{width:46,height:46,borderRadius:"50%",background:op.color,color:"#fff",border:"none",cursor:"pointer",boxShadow:`0 4px 14px ${op.color}60`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>
+                    {op.icon}
+                  </button>
+                </div>
+              ))}
+              {/* Opciones de navegación */}
+              <div style={{width:"100%",height:1,background:"#ffffff20",margin:"4px 0"}}/>
+              {[
+                {label:"Presupuesto",icon:"🧮",action:()=>{setScreen("presupuesto");setFabOpen(false);}},
+                {label:"Cartera",icon:"💼",action:()=>{setScreen("cartera");setFabOpen(false);}},
+                {label:"Papelera",icon:"🗑",action:()=>{setScreen("papelera");setFabOpen(false);}},
+                ...(esAdmin?[{label:"Usuarios",icon:"👥",action:()=>{setScreen("usuarios");setFabOpen(false);}}]:[]),
+                {label:"Cerrar sesión",icon:"🚪",color:"#ef4444",action:()=>{setLoggedIn(false);setUsuarioActual(null);setAllClients([]);setAllCreditos([]);setAllProductos([]);}},
+              ].map((op,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:10}}>
+                  <span style={{background:t.card,color:op.color||t.text,borderRadius:10,padding:"8px 14px",fontWeight:600,fontSize:13,boxShadow:"0 2px 12px rgba(0,0,0,0.15)",border:`1px solid ${t.border}`,whiteSpace:"nowrap"}}>{op.label}</span>
+                  <button onClick={op.action}
+                    style={{width:46,height:46,borderRadius:"50%",background:op.color||t.card,color:op.color?"#fff":t.text,border:`1px solid ${op.color||t.border}`,cursor:"pointer",boxShadow:"0 2px 10px rgba(0,0,0,0.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>
+                    {op.icon}
+                  </button>
+                </div>
+              ))}
+              {/* X para cerrar */}
+              <button onClick={()=>setFabOpen(false)}
+                style={{width:52,height:52,borderRadius:"50%",background:"#ef4444",color:"#fff",border:"none",cursor:"pointer",boxShadow:"0 4px 16px rgba(239,68,68,0.4)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:300,alignSelf:"flex-end"}}>
+                ✕
+              </button>
+            </div>
+          </>
+        )}
+
+        <style>{`@keyframes fadeSlideUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}`}</style>
       </div>
     );
   }

@@ -11,8 +11,8 @@ import { createClient } from "@supabase/supabase-js";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 
 // ── SUPABASE CONFIG ───────────────────────────────────────────────────────────
-const SUPABASE_URL = "https://jlwfuaokefwxbwdfvppo.supabase.co";
-const SUPABASE_KEY = "sb_publishable_j-xJJUtfNfJJd_TkDnBeCg_dco6hFRA";
+const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
+const SUPABASE_KEY = process.env.REACT_APP_SUPABASE_KEY;
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const LIGHT={bg:"#f4f6fb",card:"#ffffff",sidebar:"#0f1729",sidebarText:"#94a3b8",text:"#0f172a",sub:"#64748b",border:"#e2e8f0",accent:"#3b82f6",accent2:"#10b981",danger:"#ef4444",warning:"#f59e0b",purple:"#8b5cf6",input:"#ffffff",inputBorder:"#cbd5e1"};

@@ -2995,8 +2995,21 @@ export default function App(){
   const [sincronizando,setSincronizando]=useState(false);
   const [mostrarBannerSync,setMostrarBannerSync]=useState(false);
   // Detección automática de celular + toggle manual
-  const [mobile,setMobile]=useState(()=>window.innerWidth<768);
+  const [mobile,setMobile]=useState(()=>{
+    if(typeof window==="undefined")return false;
+    const esCelular=/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    return esCelular||window.innerWidth<768;
+  });
   const t=dark?DARK:LIGHT;
+
+  // Mostrar bienvenida al loguearse en móvil
+  useEffect(()=>{
+    if(loggedIn&&mobile&&usuarioActual){
+      setMostrarBienvenida(true);
+      const timer=setTimeout(()=>setMostrarBienvenida(false),2600);
+      return()=>clearTimeout(timer);
+    }
+  },[loggedIn,mobile,usuarioActual]);
 
   // Registrar Service Worker
   useEffect(()=>{
@@ -3109,14 +3122,12 @@ export default function App(){
     if(loginForm.user==="andres"&&loginForm.pass==="Laliga2215"){
       const u={id:0,nombre:"Andres",user:"andres",rol:"admin"};
       setUsuarioActual(u);setLoggedIn(true);setLoginErr("");
-      if(mobile){setMostrarBienvenida(true);setTimeout(()=>setMostrarBienvenida(false),2600);}
       cargarDatos(u);return;
     }
     const {data}=await sb.from("usuarios").select("*").eq("user_name",loginForm.user).eq("password",loginForm.pass).eq("activo",true).single();
     if(data){
       const u=usuarioFromDB(data);
       setUsuarioActual(u);setLoggedIn(true);setLoginErr("");
-      if(mobile){setMostrarBienvenida(true);setTimeout(()=>setMostrarBienvenida(false),2600);}
       cargarDatos(u);
     } else setLoginErr("Usuario o contraseña incorrectos");
   };

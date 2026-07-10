@@ -2978,6 +2978,7 @@ export default function App(){
   const [screen,setScreen]=useState("dashboard");
   const [fabOpen,setFabOpen]=useState(false);
   const [fabModal,setFabModal]=useState(null);
+  const [filtroCobros,setFiltroCobros]=useState("todos"); // todos|vencidos|hoy|proximos
   const [allClients,setAllClients]=useState([]);
   const [allCreditos,setAllCreditos]=useState([]);
   const [allProductos,setAllProductos]=useState([]);
@@ -3237,26 +3238,80 @@ export default function App(){
         <main style={{flex:1,padding:"14px 14px 90px",overflowY:"auto"}}>
 
           {/* ── PANTALLA COBROS DEL DÍA ── */}
-          {screen==="cobros"&&(
+          {screen==="cobros"&&(()=>{
+            const totalVencidosMonto=cobrosVencidos.reduce((s,c)=>s+(c.proxCuota?.valorCuotaEditado||c.valorCuota||0),0);
+            const totalProximosMonto=cobrosMañana.reduce((s,c)=>s+(c.proxCuota?.valorCuotaEditado||c.valorCuota||0),0);
+            const totalTodos=cobrosDia.length;
+            const pieData=[
+              {name:"Vencidos",value:cobrosVencidos.length,monto:totalVencidosMonto,color:"#ef4444",id:"vencidos"},
+              {name:"Hoy",value:cobrosHoy.length,monto:totalHoy,color:"#10b981",id:"hoy"},
+              {name:"Próximos",value:cobrosMañana.length,monto:totalProximosMonto,color:"#3b82f6",id:"proximos"},
+            ].filter(d=>d.value>0);
+            const filtroInfo={
+              todos:{label:"Todos",color:t.accent,count:totalTodos,monto:totalVencidosMonto+totalHoy+totalProximosMonto},
+              vencidos:{label:"Vencidos",color:"#ef4444",count:cobrosVencidos.length,monto:totalVencidosMonto},
+              hoy:{label:"Vencen hoy",color:"#10b981",count:cobrosHoy.length,monto:totalHoy},
+              proximos:{label:"Próximos 1-3 días",color:"#3b82f6",count:cobrosMañana.length,monto:totalProximosMonto},
+            }[filtroCobros];
+            return(
             <div>
-              <div style={{marginBottom:16}}>
+              <div style={{marginBottom:14}}>
                 <h1 style={{fontSize:20,fontWeight:900,color:t.text,margin:"0 0 2px"}}>☀️ Cobros del día</h1>
                 <p style={{color:t.sub,margin:0,fontSize:12}}>{new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"})}</p>
               </div>
 
-              {/* Resumen rápido */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
-                <div style={{background:"#10b98115",border:"1px solid #10b98130",borderRadius:12,padding:"14px"}}>
-                  <div style={{fontSize:10,color:"#10b981",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Cobrar HOY</div>
-                  <div style={{fontSize:22,fontWeight:900,color:"#10b981"}}>{fmt(totalHoy)}</div>
-                  <div style={{fontSize:11,color:t.sub,marginTop:2}}>{cobrosHoy.length} cliente{cobrosHoy.length!==1?"s":""}</div>
+              {/* ── TORTA INTERACTIVA ── */}
+              {cobrosDia.length>0&&(
+                <div style={{background:t.card,borderRadius:16,border:`1px solid ${t.border}`,padding:"16px",marginBottom:16}}>
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    {/* Gráfico */}
+                    <div style={{width:150,height:150,position:"relative",flexShrink:0}}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={pieData} cx="50%" cy="50%" innerRadius={42} outerRadius={68} paddingAngle={4} dataKey="value"
+                            onClick={(entry)=>{setFiltroCobros(filtroCobros===entry.id?"todos":entry.id);}}>
+                            {pieData.map((d,i)=>(
+                              <Cell key={i} fill={d.color}
+                                stroke={filtroCobros===d.id?"#fff":"none"}
+                                strokeWidth={filtroCobros===d.id?3:0}
+                                style={{cursor:"pointer",opacity:filtroCobros==="todos"||filtroCobros===d.id?1:0.35,transition:"opacity 0.2s"}}/>
+                            ))}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                      {/* Centro de la torta */}
+                      <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+                        <div style={{fontSize:20,fontWeight:900,color:filtroInfo.color}}>{filtroInfo.count}</div>
+                        <div style={{fontSize:8,color:t.sub,fontWeight:700,textTransform:"uppercase"}}>{filtroCobros==="todos"?"total":"filtrado"}</div>
+                      </div>
+                    </div>
+                    {/* Leyenda tocable */}
+                    <div style={{flex:1,display:"flex",flexDirection:"column",gap:6}}>
+                      <button onClick={()=>setFiltroCobros("todos")}
+                        style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 10px",borderRadius:8,border:`2px solid ${filtroCobros==="todos"?t.accent:t.border}`,background:filtroCobros==="todos"?`${t.accent}15`:"transparent",cursor:"pointer"}}>
+                        <span style={{fontSize:12,fontWeight:700,color:filtroCobros==="todos"?t.accent:t.text}}>📋 Todos</span>
+                        <span style={{fontSize:12,fontWeight:800,color:t.text}}>{totalTodos}</span>
+                      </button>
+                      {[
+                        {id:"vencidos",icon:"🔴",label:"Vencidos",count:cobrosVencidos.length,color:"#ef4444"},
+                        {id:"hoy",icon:"🟢",label:"Hoy",count:cobrosHoy.length,color:"#10b981"},
+                        {id:"proximos",icon:"🔵",label:"Próximos",count:cobrosMañana.length,color:"#3b82f6"},
+                      ].map(f=>(
+                        <button key={f.id} onClick={()=>setFiltroCobros(filtroCobros===f.id?"todos":f.id)}
+                          style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 10px",borderRadius:8,border:`2px solid ${filtroCobros===f.id?f.color:t.border}`,background:filtroCobros===f.id?`${f.color}15`:"transparent",cursor:"pointer",opacity:f.count===0?0.4:1}}>
+                          <span style={{fontSize:12,fontWeight:700,color:filtroCobros===f.id?f.color:t.text}}>{f.icon} {f.label}</span>
+                          <span style={{fontSize:12,fontWeight:800,color:f.color}}>{f.count}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Monto del filtro activo */}
+                  <div style={{marginTop:12,background:`${filtroInfo.color}12`,border:`1px solid ${filtroInfo.color}30`,borderRadius:10,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{fontSize:12,fontWeight:700,color:filtroInfo.color}}>{filtroInfo.label}</span>
+                    <span style={{fontSize:16,fontWeight:900,color:filtroInfo.color}}>{fmt(filtroInfo.monto)}</span>
+                  </div>
                 </div>
-                <div style={{background:"#ef444415",border:"1px solid #ef444430",borderRadius:12,padding:"14px"}}>
-                  <div style={{fontSize:10,color:"#ef4444",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Vencidos</div>
-                  <div style={{fontSize:22,fontWeight:900,color:"#ef4444"}}>{cobrosVencidos.length}</div>
-                  <div style={{fontSize:11,color:t.sub,marginTop:2}}>sin cobrar</div>
-                </div>
-              </div>
+              )}
 
               {cobrosDia.length===0&&(
                 <div style={{textAlign:"center",padding:"50px 0",color:t.sub}}>
@@ -3266,7 +3321,7 @@ export default function App(){
                 </div>
               )}
 
-              {cobrosVencidos.length>0&&(
+              {(filtroCobros==="todos"||filtroCobros==="vencidos")&&cobrosVencidos.length>0&&(
                 <div style={{marginBottom:18}}>
                   <div style={{fontSize:11,fontWeight:700,color:"#ef4444",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
                     <span style={{width:8,height:8,borderRadius:"50%",background:"#ef4444",display:"inline-block"}}/>
@@ -3276,7 +3331,7 @@ export default function App(){
                 </div>
               )}
 
-              {cobrosHoy.length>0&&(
+              {(filtroCobros==="todos"||filtroCobros==="hoy")&&cobrosHoy.length>0&&(
                 <div style={{marginBottom:18}}>
                   <div style={{fontSize:11,fontWeight:700,color:"#10b981",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
                     <span style={{width:8,height:8,borderRadius:"50%",background:"#10b981",display:"inline-block"}}/>
@@ -3286,7 +3341,7 @@ export default function App(){
                 </div>
               )}
 
-              {cobrosMañana.length>0&&(
+              {(filtroCobros==="todos"||filtroCobros==="proximos")&&cobrosMañana.length>0&&(
                 <div style={{marginBottom:18}}>
                   <div style={{fontSize:11,fontWeight:700,color:"#3b82f6",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
                     <span style={{width:8,height:8,borderRadius:"50%",background:"#3b82f6",display:"inline-block"}}/>
@@ -3295,8 +3350,18 @@ export default function App(){
                   {cobrosMañana.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} clients={clients} t={t} onCobrar={marcarCobradoMob} colorBorde="#3b82f6"/>)}
                 </div>
               )}
+
+              {/* Mensaje cuando el filtro no tiene resultados */}
+              {filtroCobros!=="todos"&&filtroInfo.count===0&&(
+                <div style={{textAlign:"center",padding:"30px 0",color:t.sub}}>
+                  <div style={{fontSize:32,marginBottom:8}}>✅</div>
+                  <div style={{fontSize:14,fontWeight:600,color:t.text}}>No hay {filtroInfo.label.toLowerCase()}</div>
+                  <button onClick={()=>setFiltroCobros("todos")} style={{marginTop:10,background:"none",border:`1px solid ${t.accent}`,color:t.accent,borderRadius:8,padding:"6px 14px",fontSize:12,fontWeight:700,cursor:"pointer"}}>Ver todos</button>
+                </div>
+              )}
             </div>
-          )}
+            );
+          })()}
 
           {screen==="dashboard"&&<Dashboard clients={clients} creditos={creditos} setCreditos={setCreditos} productos={productos} setProductos={setProductos} ventasContado={ventasContado} t={t}/>}
           {screen==="clientes"&&<Clientes clients={clients} setClients={setClients} creditos={creditos} setCreditos={setCreditos} productos={productos} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}

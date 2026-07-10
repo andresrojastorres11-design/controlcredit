@@ -9,6 +9,8 @@ import React from "react";
 import * as XLSX from "xlsx";
 import { createClient } from "@supabase/supabase-js";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import { initDB, saveToLocal, getFromLocal, updateLocal, agregarACola } from "./db";
+import { sincronizarCola } from "./sync";
 
 // ── SUPABASE CONFIG ───────────────────────────────────────────────────────────
 const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
@@ -2986,9 +2988,46 @@ export default function App(){
   const [loginForm,setLoginForm]=useState({user:"",pass:""});
   const [loginErr,setLoginErr]=useState("");
   const [loadingData,setLoadingData]=useState(false);
+  const [offline,setOffline]=useState(!navigator.onLine);
+  const [colaPendiente,setColaPendiente]=useState(0);
+  const [sincronizando,setSincronizando]=useState(false);
+  const [mostrarBannerSync,setMostrarBannerSync]=useState(false);
   // Detección automática de celular + toggle manual
   const [mobile,setMobile]=useState(()=>window.innerWidth<768);
   const t=dark?DARK:LIGHT;
+
+  // Registrar Service Worker
+  useEffect(()=>{
+    if("serviceWorker" in navigator){
+      navigator.serviceWorker.register("/sw.js").catch(()=>{});
+    }
+  },[]);
+
+  // Detectar online/offline
+  useEffect(()=>{
+    const goOffline=()=>{setOffline(true);};
+    const goOnline=async()=>{
+      setOffline(false);
+      // Al volver online, sincronizar cola automáticamente
+      if(loggedIn){
+        setSincronizando(true);
+        setMostrarBannerSync(true);
+        try{
+          const {sincronizados,errores}=await sincronizarCola(sb);
+          if(sincronizados>0){
+            // Recargar datos frescos de Supabase
+            await cargarDatos(usuarioActual);
+          }
+          setColaPendiente(0);
+        }catch(e){}
+        setSincronizando(false);
+        setTimeout(()=>setMostrarBannerSync(false),3000);
+      }
+    };
+    window.addEventListener("offline",goOffline);
+    window.addEventListener("online",goOnline);
+    return()=>{window.removeEventListener("offline",goOffline);window.removeEventListener("online",goOnline);};
+  },[loggedIn,usuarioActual]);
 
   const esAdmin=usuarioActual?.rol==="admin"||usuarioActual?.user==="andres";
   const soloVer=usuarioActual?.rol==="administrador"; // Solo puede ver, no editar
@@ -2999,24 +3038,67 @@ export default function App(){
   const productos=allProductos.filter(p=>p.usuarioId===uid);
   const ventasContado=allVentasContado.filter(v=>v.usuario_id===uid);
   const setClients=(fn)=>setAllClients(fn);
-  const setCreditos=(fn)=>setAllCreditos(fn);
-  const setProductos=(fn)=>setAllProductos(fn);
+  const setCreditos=async(fn)=>{
+    setAllCreditos(prev=>{
+      const nuevo=typeof fn==="function"?fn(prev):fn;
+      // Guardar en local siempre
+      const uid2=usuarioActual?.id||0;
+      const soloMios=nuevo.filter(c=>c.usuarioId===uid2);
+      saveToLocal("creditos",soloMios.map(c=>({id:c.id,cliente_id:c.clienteId,cliente_nombre:c.clienteNombre,monto:c.monto,total_cobrar:c.totalCobrar,ganancia:c.ganancia,cuotas:c.cuotas,cuotas_pagadas:c.cuotasPagadas,valor_cuota:c.valorCuota,saldo_cobrado:c.saldoCobrado,saldo_pendiente:c.saldoPendiente,frecuencia:c.frecuencia,fecha_otorg:c.fechaOtorg,proximo_pago:c.proximoPago,estado:c.estado,comentarios:c.comentarios,historial:c.historial,detalle_cuotas:c.detalleCuotas,usuario_id:c.usuarioId}))).catch(()=>{});
+      return nuevo;
+    });
+  };
+  const setProductos=async(fn)=>{
+    setAllProductos(prev=>{
+      const nuevo=typeof fn==="function"?fn(prev):fn;
+      const uid2=usuarioActual?.id||0;
+      const soloMios=nuevo.filter(p=>p.usuarioId===uid2);
+      saveToLocal("productos",soloMios.map(p=>({id:p.id,cliente_id:p.clienteId,cliente_nombre:p.clienteNombre,producto:p.producto,inversion:p.inversion,precio_financiado:p.precioFinanciado,ganancia:p.ganancia,cuotas:p.cuotas,cuotas_pagadas:p.cuotasPagadas,saldo_cobrado:p.saldoCobrado,saldo_pendiente:p.saldoPendiente,valor_cuota:p.valorCuota,estado:p.estado,frecuencia:p.frecuencia,usuario_id:p.usuarioId,detalle_cuotas:p.detalleCuotas,fecha_otorg:p.fechaOtorg,proximo_pago:p.proximoPago}))).catch(()=>{});
+      return nuevo;
+    });
+  };
   const setVentasContado=(fn)=>setAllVentasContado(fn);
 
   const cargarDatos=async(usuario)=>{
     setLoadingData(true);
-    // Siempre cargamos todo — el filtrado se hace en el frontend
-    const [{data:cls},{data:crs},{data:prds},{data:vcs}]=await Promise.all([
-      sb.from("clientes").select("*").order("id"),
-      sb.from("creditos").select("*").order("id"),
-      sb.from("productos").select("*").order("id"),
-      sb.from("ventas_contado").select("*").order("id"),
-    ]);
-    if(cls)setAllClients(cls.map(clientFromDB));
-    if(crs)setAllCreditos(crs.map(creditoFromDB));
-    if(prds)setAllProductos(prds.map(productoFromDB));
-    if(vcs)setAllVentasContado(vcs);
+    if(navigator.onLine){
+      // Online: cargar de Supabase y guardar en local
+      try{
+        const [{data:cls},{data:crs},{data:prds},{data:vcs}]=await Promise.all([
+          sb.from("clientes").select("*").order("id"),
+          sb.from("creditos").select("*").order("id"),
+          sb.from("productos").select("*").order("id"),
+          sb.from("ventas_contado").select("*").order("id"),
+        ]);
+        if(cls){setAllClients(cls.map(clientFromDB));await saveToLocal("clientes",cls);}
+        if(crs){setAllCreditos(crs.map(creditoFromDB));await saveToLocal("creditos",crs);}
+        if(prds){setAllProductos(prds.map(productoFromDB));await saveToLocal("productos",prds);}
+        if(vcs){setAllVentasContado(vcs);await saveToLocal("ventas_contado",vcs);}
+      }catch(e){
+        // Si falla, cargar de local
+        await cargarDatosLocal();
+      }
+    } else {
+      // Offline: cargar de IndexedDB
+      await cargarDatosLocal();
+    }
     setLoadingData(false);
+  };
+
+  const cargarDatosLocal=async()=>{
+    try{
+      await initDB();
+      const [cls,crs,prds,vcs]=await Promise.all([
+        getFromLocal("clientes"),
+        getFromLocal("creditos"),
+        getFromLocal("productos"),
+        getFromLocal("ventas_contado"),
+      ]);
+      if(cls.length)setAllClients(cls.map(clientFromDB));
+      if(crs.length)setAllCreditos(crs.map(creditoFromDB));
+      if(prds.length)setAllProductos(prds.map(productoFromDB));
+      if(vcs.length)setAllVentasContado(vcs);
+    }catch(e){console.error("Error cargando datos locales",e);}
   };
 
   const doLogin=async()=>{
@@ -3104,9 +3186,17 @@ export default function App(){
       const proxPend=det.find(d=>d.estado!=="Pagada");
       const nuevoEstado=pendiente<=0?"Finalizado":"Al día";
       const tabla=c._tipo==="producto"?"productos":"creditos";
-      const upd={cuotas_pagadas:pagadas,saldo_cobrado:totalCobrado,saldo_pendiente:pendiente,proximo_pago:proxPend?.fechaVenc||"",estado:nuevoEstado,detalle_cuotas:det};
-      if(c._tipo!=="producto")upd.historial=[...(c.historial||[]),{tipo:"pago_completo",cuota:idx+1,monto:vc,fecha:new Date().toLocaleDateString("es-AR")}];
-      await sb.from(tabla).update(upd).eq("id",c.id);
+      const updateData={cuotas_pagadas:pagadas,saldo_cobrado:totalCobrado,saldo_pendiente:pendiente,proximo_pago:proxPend?.fechaVenc||"",estado:nuevoEstado,detalle_cuotas:det};
+      if(c._tipo!=="producto")updateData.historial=[...(c.historial||[]),{tipo:"pago_completo",cuota:idx+1,monto:vc,fecha:new Date().toLocaleDateString("es-AR")}];
+
+      if(navigator.onLine){
+        await sb.from(tabla).update(updateData).eq("id",c.id);
+      } else {
+        // Offline: guardar en cola para sincronizar después
+        await agregarACola({tipo:`update_${tabla.slice(0,-1)}`,id_registro:c.id,datos:updateData});
+        setColaPendiente(p=>p+1);
+      }
+
       if(c._tipo==="producto")setProductos(ps=>ps.map(x=>x.id===c.id?{...x,cuotasPagadas:pagadas,saldoCobrado:totalCobrado,saldoPendiente:pendiente,proximoPago:proxPend?.fechaVenc||"",estado:nuevoEstado,detalleCuotas:det}:x));
       else setCreditos(cs=>cs.map(x=>x.id===c.id?{...x,cuotasPagadas:pagadas,saldoCobrado:totalCobrado,saldoPendiente:pendiente,proximoPago:proxPend?.fechaVenc||"",estado:nuevoEstado,detalleCuotas:det}:x));
     };
@@ -3127,6 +3217,20 @@ export default function App(){
             <div style={{width:28,height:28,borderRadius:"50%",background:t.accent,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:700,fontSize:12}}>{(usuarioActual?.nombre||"A")[0].toUpperCase()}</div>
           </div>
         </header>
+
+        {/* Banner offline / sincronizando */}
+        {(offline||mostrarBannerSync)&&(
+          <div style={{background:offline?"#ef4444":sincronizando?"#f59e0b":"#10b981",color:"#fff",padding:"8px 16px",fontSize:12,fontWeight:700,textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+            {offline&&<>📵 Sin internet — los cambios se guardan y sincronizan al volver</>}
+            {!offline&&sincronizando&&<>⏳ Sincronizando cambios offline...</>}
+            {!offline&&!sincronizando&&mostrarBannerSync&&<>✅ Todo sincronizado con la nube</>}
+          </div>
+        )}
+        {colaPendiente>0&&!offline&&(
+          <div style={{background:"#f59e0b",color:"#fff",padding:"6px 16px",fontSize:11,fontWeight:600,textAlign:"center"}}>
+            {colaPendiente} cambio{colaPendiente!==1?"s":""} pendiente{colaPendiente!==1?"s":""} de sincronizar
+          </div>
+        )}
 
         {/* Contenido móvil */}
         <main style={{flex:1,padding:"14px 14px 90px",overflowY:"auto"}}>
@@ -3327,6 +3431,9 @@ export default function App(){
         <header style={{background:t.card,padding:"12px 24px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:`1px solid ${t.border}`,position:"sticky",top:0,zIndex:100}}>
           <button onClick={()=>setSideOpen(o=>!o)} style={{background:"none",border:"none",cursor:"pointer",color:t.sub,padding:4,borderRadius:6}}><Icon name="menu" size={20}/></button>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
+            {offline&&<div style={{background:"#ef4444",color:"#fff",borderRadius:8,padding:"4px 12px",fontSize:12,fontWeight:700,display:"flex",alignItems:"center",gap:5}}>📵 Sin internet</div>}
+            {sincronizando&&<div style={{background:"#f59e0b",color:"#fff",borderRadius:8,padding:"4px 12px",fontSize:12,fontWeight:700}}>⏳ Sincronizando...</div>}
+            {mostrarBannerSync&&!sincronizando&&<div style={{background:"#10b981",color:"#fff",borderRadius:8,padding:"4px 12px",fontSize:12,fontWeight:700}}>✅ Sincronizado</div>}
             {alertCount>0&&<div style={{display:"flex",alignItems:"center",gap:6,background:"#fef3c7",color:"#92400e",borderRadius:8,padding:"4px 10px",fontSize:12,fontWeight:600}}><Icon name="alert" size={14}/>{alertCount} alertas</div>}
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               <div style={{width:32,height:32,borderRadius:"50%",background:t.accent,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:700,fontSize:13}}>{(usuarioActual?.nombre||"A")[0].toUpperCase()}</div>

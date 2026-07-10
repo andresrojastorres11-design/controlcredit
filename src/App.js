@@ -3027,6 +3027,7 @@ export default function App(){
     window.addEventListener("offline",goOffline);
     window.addEventListener("online",goOnline);
     return()=>{window.removeEventListener("offline",goOffline);window.removeEventListener("online",goOnline);};
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   },[loggedIn,usuarioActual]);
 
   const esAdmin=usuarioActual?.rol==="admin"||usuarioActual?.user==="andres";

@@ -1,19 +1,7 @@
-const CACHE_NAME = "controlcredit-v1";
-const STATIC_ASSETS = [
-  "/",
-  "/index.html",
-  "/static/js/main.chunk.js",
-  "/static/js/bundle.js",
-  "/static/js/vendors~main.chunk.js",
-];
+const CACHE_NAME = "controlcredit-v2";
 
-// Instalar SW y cachear assets estáticos
+// Instalar SW
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS).catch(() => {});
-    })
-  );
   self.skipWaiting();
 });
 
@@ -29,11 +17,11 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Interceptar requests
+// Interceptar requests — NETWORK FIRST (siempre intenta la red primero)
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  // Supabase: siempre intentar red primero, si falla devolver null
+  // Supabase: red directa, si falla responder offline
   if (url.hostname.includes("supabase.co")) {
     event.respondWith(
       fetch(event.request).catch(() => {
@@ -45,28 +33,27 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Assets estáticos: cache first
+  // Todo lo demás: NETWORK FIRST — usa la red, guarda copia, y solo usa cache si no hay internet
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      return (
-        cached ||
-        fetch(event.request)
-          .then((response) => {
-            if (response && response.status === 200) {
-              const clone = response.clone();
-              caches.open(CACHE_NAME).then((cache) => {
-                cache.put(event.request, clone);
-              });
-            }
-            return response;
-          })
-          .catch(() => caches.match("/index.html"))
-      );
-    })
+    fetch(event.request)
+      .then((response) => {
+        if (response && response.status === 200 && event.request.method === "GET") {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, clone).catch(() => {});
+          });
+        }
+        return response;
+      })
+      .catch(() => {
+        // Sin internet: usar cache
+        return caches.match(event.request).then((cached) => {
+          return cached || caches.match("/index.html");
+        });
+      })
   );
 });
 
-// Recibir mensaje para sincronizar cuando vuelve internet
 self.addEventListener("message", (event) => {
   if (event.data === "SKIP_WAITING") self.skipWaiting();
 });

@@ -3133,6 +3133,41 @@ export default function App(){
     </div>
   );
 
+  // ── BIENVENIDA MÓVIL — tiene prioridad sobre la pantalla de carga ──
+  if(mobile&&mostrarBienvenida){
+    const hora=new Date().getHours();
+    const saludo=hora<12?"¡Buen día":hora<19?"¡Buenas tardes":"¡Buenas noches";
+    return(
+      <div style={{minHeight:"100vh",background:`linear-gradient(160deg,${t.sidebar} 0%,#0d1b3e 50%,${t.accent}30 100%)`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"'Segoe UI',system-ui,sans-serif",overflow:"hidden",position:"relative"}}>
+        <div style={{position:"absolute",width:300,height:300,borderRadius:"50%",background:`${t.accent}15`,top:-100,right:-100,animation:"pulseBig 3s ease-in-out infinite"}}/>
+        <div style={{position:"absolute",width:200,height:200,borderRadius:"50%",background:"#10b98115",bottom:-60,left:-60,animation:"pulseBig 3s ease-in-out 0.5s infinite"}}/>
+        <div style={{animation:"bounceIn 0.7s ease both"}}>
+          <div style={{width:80,height:80,borderRadius:24,background:t.accent,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 12px 40px ${t.accent}60`,margin:"0 auto 24px",color:"#fff"}}>
+            <Icon name="coin" size={40}/>
+          </div>
+        </div>
+        <div style={{textAlign:"center",animation:"fadeSlideUp2 0.6s ease 0.3s both"}}>
+          <div style={{fontSize:16,color:"#94a3b8",fontWeight:600,marginBottom:6}}>{saludo}!</div>
+          <div style={{fontSize:34,fontWeight:900,color:"#fff",marginBottom:4,letterSpacing:"-1px"}}>{usuarioActual?.nombre||""}</div>
+          <div style={{fontSize:13,color:"#64748b",fontWeight:600}}>Bienvenido a Control<span style={{color:t.accent}}>Credit</span></div>
+        </div>
+        <div style={{marginTop:40,animation:"fadeSlideUp2 0.6s ease 0.6s both"}}>
+          <div style={{display:"flex",gap:6}}>
+            {[0,1,2].map(i=>(
+              <div key={i} style={{width:10,height:10,borderRadius:"50%",background:t.accent,animation:`dotBounce 1s ease-in-out ${i*0.15}s infinite`}}/>
+            ))}
+          </div>
+        </div>
+        <style>{`
+          @keyframes bounceIn{0%{opacity:0;transform:scale(0.3)}50%{transform:scale(1.08)}70%{transform:scale(0.95)}100%{opacity:1;transform:scale(1)}}
+          @keyframes fadeSlideUp2{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+          @keyframes dotBounce{0%,100%{transform:translateY(0);opacity:0.5}50%{transform:translateY(-8px);opacity:1}}
+          @keyframes pulseBig{0%,100%{transform:scale(1);opacity:0.6}50%{transform:scale(1.15);opacity:1}}
+        `}</style>
+      </div>
+    );
+  }
+
   if(loadingData)return(
     <div style={{minHeight:"100vh",background:t.bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{textAlign:"center",color:t.sub}}><div style={{fontSize:36,marginBottom:12}}>⏳</div><div style={{fontSize:15,fontWeight:700,color:t.text}}>Cargando datos...</div></div>
@@ -3154,48 +3189,6 @@ export default function App(){
 
   // ── MODO MÓVIL ────────────────────────────────────────────────────────────────
   if(mobile){
-    // ── PANTALLA DE BIENVENIDA ANIMADA ──
-    if(mostrarBienvenida){
-      const hora=new Date().getHours();
-      const saludo=hora<12?"¡Buen día":hora<19?"¡Buenas tardes":"¡Buenas noches";
-      return(
-        <div style={{minHeight:"100vh",background:`linear-gradient(160deg,${t.sidebar} 0%,#0d1b3e 50%,${t.accent}30 100%)`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"'Segoe UI',system-ui,sans-serif",overflow:"hidden",position:"relative"}}>
-          {/* Círculos decorativos animados */}
-          <div style={{position:"absolute",width:300,height:300,borderRadius:"50%",background:`${t.accent}15`,top:-100,right:-100,animation:"pulseBig 3s ease-in-out infinite"}}/>
-          <div style={{position:"absolute",width:200,height:200,borderRadius:"50%",background:"#10b98115",bottom:-60,left:-60,animation:"pulseBig 3s ease-in-out 0.5s infinite"}}/>
-
-          {/* Logo animado */}
-          <div style={{animation:"bounceIn 0.7s ease both"}}>
-            <div style={{width:80,height:80,borderRadius:24,background:t.accent,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 12px 40px ${t.accent}60`,marginBottom:24,margin:"0 auto 24px"}}>
-              <Icon name="coin" size={40}/>
-            </div>
-          </div>
-
-          {/* Textos animados */}
-          <div style={{textAlign:"center",animation:"fadeSlideUp2 0.6s ease 0.3s both"}}>
-            <div style={{fontSize:16,color:"#94a3b8",fontWeight:600,marginBottom:6}}>{saludo}!</div>
-            <div style={{fontSize:34,fontWeight:900,color:"#fff",marginBottom:4,letterSpacing:"-1px"}}>{usuarioActual?.nombre||""}</div>
-            <div style={{fontSize:13,color:"#64748b",fontWeight:600}}>Bienvenido a Control<span style={{color:t.accent}}>Credit</span></div>
-          </div>
-
-          {/* Loader */}
-          <div style={{marginTop:40,animation:"fadeSlideUp2 0.6s ease 0.6s both"}}>
-            <div style={{display:"flex",gap:6}}>
-              {[0,1,2].map(i=>(
-                <div key={i} style={{width:10,height:10,borderRadius:"50%",background:t.accent,animation:`dotBounce 1s ease-in-out ${i*0.15}s infinite`}}/>
-              ))}
-            </div>
-          </div>
-
-          <style>{`
-            @keyframes bounceIn{0%{opacity:0;transform:scale(0.3)}50%{transform:scale(1.08)}70%{transform:scale(0.95)}100%{opacity:1;transform:scale(1)}}
-            @keyframes fadeSlideUp2{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
-            @keyframes dotBounce{0%,100%{transform:translateY(0);opacity:0.5}50%{transform:translateY(-8px);opacity:1}}
-            @keyframes pulseBig{0%,100%{transform:scale(1);opacity:0.6}50%{transform:scale(1.15);opacity:1}}
-          `}</style>
-        </div>
-      );
-    }
 
 
     // ── PANTALLA COBROS DEL DÍA ──

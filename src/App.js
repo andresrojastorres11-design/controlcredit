@@ -44,6 +44,28 @@ const generarFechasCuotas=(fechaOtorg,frecuencia,cantCuotas)=>{
 };
 const crearDetalleCuotas=(fechaOtorg,frecuencia,cantCuotas,valorCuota)=>{const fechas=generarFechasCuotas(fechaOtorg,frecuencia,cantCuotas);return fechas.map((fecha,i)=>({num:i+1,fechaVenc:fecha,montoPagado:0,estado:"Pendiente",fechaPago:null}));};
 
+// Genera las fechas arrancando EXACTAMENTE en la fecha del primer cobro elegida
+const generarFechasDesdePrimerPago=(primerPago,frecuencia,cantCuotas)=>{
+  if(!primerPago||!cantCuotas)return[];
+  return Array.from({length:cantCuotas},(_,i)=>{
+    const d=new Date(primerPago);
+    if(frecuencia==="Mensual"){
+      const diaOrigen=d.getDate();
+      d.setMonth(d.getMonth()+i);
+      const ultimoDia=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();
+      d.setDate(Math.min(diaOrigen,ultimoDia));
+    } else {
+      const dias=frecuencia==="Semanal"?7:14;
+      d.setDate(d.getDate()+dias*i);
+    }
+    return d.toISOString().slice(0,10);
+  });
+};
+const crearDetalleCuotasDesde=(primerPago,frecuencia,cantCuotas)=>{
+  const fechas=generarFechasDesdePrimerPago(primerPago,frecuencia,cantCuotas);
+  return fechas.map((fecha,i)=>({num:i+1,fechaVenc:fecha,montoPagado:0,estado:"Pendiente",fechaPago:null}));
+};
+
 // Helpers para convertir entre snake_case (Supabase) y camelCase (App)
 const clientFromDB=(r)=>({id:r.id,nombre:r.nombre,apellido:r.apellido,dni:r.dni||"",email:r.email||"",tel:r.tel||"",ciudad:r.ciudad||"",provincia:r.provincia||"",estado:r.estado||"Al día",score:r.score||75,sueldo:r.sueldo||"",ocupacion:r.ocupacion||"",empresa:r.empresa||"",estadoCivil:r.estado_civil||"",nacimiento:r.nacimiento||"",notas:r.notas||"",usuarioId:r.usuario_id||0,dniFrenteUrl:r.dni_frente||"",dniDorsoUrl:r.dni_dorso||"",direccion:r.direccion||"",mapsLink:r.maps_link||""});
 const creditoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,monto:r.monto,totalCobrar:r.total_cobrar,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,valorCuota:r.valor_cuota,saldoCobrado:r.saldo_cobrado||0,saldoPendiente:r.saldo_pendiente,frecuencia:r.frecuencia,fechaOtorg:r.fecha_otorg,proximoPago:r.proximo_pago,estado:r.estado,comentarios:r.comentarios||"",historial:r.historial||[],detalleCuotas:r.detalle_cuotas||[],usuarioId:r.usuario_id||0,pagareUrl:r.pagare_url||""});
@@ -1059,7 +1081,7 @@ const PerfilCliente=({client,creditos,productos,setCreditos,onClose,onEdit,t})=>
 
 // ── USUARIOS (hardcoded, admin puede agregar) ─────────────────────────────────
 // Los usuarios se guardan en Supabase tabla "usuarios"
-const usuarioFromDB=(r)=>({id:r.id,nombre:r.nombre,user:r.user_name,rol:r.rol||"empleado",activo:r.activo!==false});
+const usuarioFromDB=(r)=>({id:r.id,nombre:r.nombre,user:r.user_name,rol:r.rol||"empleado",activo:r.activo!==false,plan:r.plan||"trial",estadoSuscripcion:r.estado_suscripcion||"prueba",fechaVencimiento:r.fecha_vencimiento||null});
 
 // ── PANEL ADMIN USUARIOS ──────────────────────────────────────────────────────
 const ROLES=[
@@ -2177,7 +2199,91 @@ Si no encontrás algún dato dejalo vacío. El DNI son solo los números sin pun
 };
 
 // ── CRÉDITOS ──────────────────────────────────────────────────────────────────
-const Creditos=({creditos,setCreditos,clients,usuarioActual,soloVer=false,t})=>{
+// ── RESUMEN DEL CLIENTE SELECCIONADO (se muestra al elegirlo en el buscador) ──
+const ResumenClienteSel=({clienteId,creditos=[],productos=[],t})=>{
+  if(!clienteId)return null;
+  const cid=+clienteId;
+  const credAct=creditos.filter(c=>c.clienteId===cid&&c.estado!=="Finalizado");
+  const prodAct=productos.filter(p=>p.clienteId===cid&&p.estado!=="Finalizado");
+  const credFin=creditos.filter(c=>c.clienteId===cid&&c.estado==="Finalizado").length;
+  const prodFin=productos.filter(p=>p.clienteId===cid&&p.estado==="Finalizado").length;
+
+  // Sin operaciones activas → cliente limpio
+  if(credAct.length===0&&prodAct.length===0){
+    return(
+      <div style={{background:"#10b98112",border:"1px solid #10b98130",borderRadius:10,padding:"11px 14px",marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:18}}>✅</span>
+        <div>
+          <div style={{fontSize:12,fontWeight:700,color:"#10b981"}}>Cliente sin deudas activas</div>
+          <div style={{fontSize:11,color:t.sub,marginTop:1}}>
+            {credFin+prodFin>0?`Historial: ${credFin+prodFin} operación${credFin+prodFin!==1?"es":""} finalizada${credFin+prodFin!==1?"s":""} ✓`:"Primera operación con este cliente"}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const hoyR=new Date();hoyR.setHours(0,0,0,0);
+  const deudaTotal=credAct.reduce((s,c)=>s+(c.saldoPendiente||0),0)+prodAct.reduce((s,p)=>s+(p.saldoPendiente||0),0);
+  // Cuotas vencidas sin pagar en todas las operaciones activas
+  const vencidas=[...credAct,...prodAct].reduce((s,o)=>{
+    return s+(o.detalleCuotas||[]).filter(d=>d.estado!=="Pagada"&&d.fechaVenc&&new Date(d.fechaVenc)<hoyR).length;
+  },0);
+  const hayMora=[...credAct,...prodAct].some(o=>o.estado==="Moroso"||o.estado==="Atrasado")||vencidas>0;
+  const col=hayMora?"#ef4444":"#f59e0b";
+
+  return(
+    <div style={{background:`${col}10`,border:`1px solid ${col}35`,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:9,flexWrap:"wrap",gap:6}}>
+        <div style={{display:"flex",alignItems:"center",gap:7}}>
+          <span style={{fontSize:15}}>{hayMora?"⚠️":"ℹ️"}</span>
+          <span style={{fontSize:12,fontWeight:800,color:col}}>
+            Ya tiene {credAct.length+prodAct.length} operación{credAct.length+prodAct.length!==1?"es":""} activa{credAct.length+prodAct.length!==1?"s":""}
+          </span>
+          {vencidas>0&&<span style={{fontSize:10,background:"#ef4444",color:"#fff",borderRadius:20,padding:"1px 7px",fontWeight:700}}>{vencidas} cuota{vencidas!==1?"s":""} vencida{vencidas!==1?"s":""}</span>}
+        </div>
+        <div style={{textAlign:"right"}}>
+          <div style={{fontSize:9,color:t.sub,fontWeight:700,textTransform:"uppercase"}}>Debe</div>
+          <div style={{fontSize:14,fontWeight:900,color:col}}>{fmt(deudaTotal)}</div>
+        </div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:5,maxHeight:150,overflowY:"auto"}}>
+        {credAct.map(c=>{
+          const vEs=(c.detalleCuotas||[]).filter(d=>d.estado!=="Pagada"&&d.fechaVenc&&new Date(d.fechaVenc)<hoyR).length;
+          return(
+            <div key={"c"+c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:t.card,borderRadius:7,padding:"6px 10px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,minWidth:0}}>
+                <span style={{fontSize:9,background:"#3b82f6",color:"#fff",borderRadius:20,padding:"1px 6px",fontWeight:700,flexShrink:0}}>💳 Crédito</span>
+                <span style={{fontSize:11,color:t.sub,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.cuotasPagadas}/{c.cuotas} · {c.frecuencia} · Próx: {fmtFecha(c.proximoPago)}</span>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                {vEs>0&&<span style={{fontSize:9,color:"#ef4444",fontWeight:700}}>{vEs} venc.</span>}
+                <span style={{fontSize:11,fontWeight:800,color:t.text}}>{fmt(c.saldoPendiente)}</span>
+              </div>
+            </div>
+          );
+        })}
+        {prodAct.map(p=>{
+          const vEs=(p.detalleCuotas||[]).filter(d=>d.estado!=="Pagada"&&d.fechaVenc&&new Date(d.fechaVenc)<hoyR).length;
+          return(
+            <div key={"p"+p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:t.card,borderRadius:7,padding:"6px 10px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,minWidth:0}}>
+                <span style={{fontSize:9,background:"#8b5cf6",color:"#fff",borderRadius:20,padding:"1px 6px",fontWeight:700,flexShrink:0}}>🛒 {p.producto}</span>
+                <span style={{fontSize:11,color:t.sub,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.cuotasPagadas}/{p.cuotas} · {p.frecuencia}</span>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                {vEs>0&&<span style={{fontSize:9,color:"#ef4444",fontWeight:700}}>{vEs} venc.</span>}
+                <span style={{fontSize:11,fontWeight:800,color:t.text}}>{fmt(p.saldoPendiente)}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const Creditos=({creditos,setCreditos,clients,productos=[],usuarioActual,soloVer=false,t})=>{
   const [search,setSearch]=useState("");
   const [filtroEst,setFiltroEst]=useState("Todos");
   const [modal,setModal]=useState(false);
@@ -2185,13 +2291,18 @@ const Creditos=({creditos,setCreditos,clients,usuarioActual,soloVer=false,t})=>{
   const [creditoEditando,setCreditoEditando]=useState(null);
   const [expandido,setExpandido]=useState(null);
   const [loading,setLoading]=useState(false);
-  const EF={clienteId:"",monto:"",totalCobrar:"",cuotas:"",frecuencia:"Mensual",fechaOtorg:new Date().toISOString().slice(0,10),estado:"Al día",comentarios:""};
+  const EF={clienteId:"",monto:"",totalCobrar:"",cuotas:"",frecuencia:"Mensual",fechaOtorg:new Date().toISOString().slice(0,10),primerPago:"",estado:"Al día",comentarios:""};
   const [form,setForm]=useState(EF);
   const [formEdit,setFormEdit]=useState({monto:"",totalCobrar:"",cuotas:"",frecuencia:"Mensual",estado:"Al día",comentarios:""});
   const filtered=creditos.filter(c=>{const q=search.toLowerCase();return(c.clienteNombre.toLowerCase().includes(q)||c.estado.toLowerCase().includes(q))&&(filtroEst==="Todos"||c.estado===filtroEst);});
   const vc=form.cuotas&&form.totalCobrar?Math.round(+form.totalCobrar/+form.cuotas):0;
   const gan=form.monto&&form.totalCobrar?+form.totalCobrar-+form.monto:0;
-  const prox=generarFechasCuotas(form.fechaOtorg,form.frecuencia,1)[0]||"";
+  // Fecha sugerida del 1° cobro según otorgamiento + frecuencia
+  const primerPagoAuto=generarFechasCuotas(form.fechaOtorg,form.frecuencia,1)[0]||"";
+  // Si el usuario la editó a mano usa esa, si no la automática
+  const primerPagoReal=form.primerPago||primerPagoAuto;
+  const primerPagoEditado=!!form.primerPago&&form.primerPago!==primerPagoAuto;
+  const prox=primerPagoReal;
 
   const abrirEdicion=(c)=>{
     setCreditoEditando(c);
@@ -2238,7 +2349,8 @@ const Creditos=({creditos,setCreditos,clients,usuarioActual,soloVer=false,t})=>{
     const client=clients.find(c=>c.id===+form.clienteId);if(!client)return;
     setLoading(true);
     const v=Math.round(+form.totalCobrar/+form.cuotas);
-    const det=crearDetalleCuotas(form.fechaOtorg,form.frecuencia,+form.cuotas,v);
+    // Arranca el cronograma en la fecha de primer cobro (editable por el usuario)
+    const det=crearDetalleCuotasDesde(primerPagoReal,form.frecuencia,+form.cuotas);
     const data={cliente_id:+form.clienteId,cliente_nombre:`${client.nombre} ${client.apellido}`,monto:+form.monto,total_cobrar:+form.totalCobrar,ganancia:+form.totalCobrar-+form.monto,cuotas:+form.cuotas,cuotas_pagadas:0,valor_cuota:v,saldo_cobrado:0,saldo_pendiente:+form.totalCobrar,frecuencia:form.frecuencia,fecha_otorg:form.fechaOtorg,proximo_pago:det[0]?.fechaVenc||"",estado:form.estado,comentarios:form.comentarios,historial:[],detalle_cuotas:det,usuario_id:usuarioActual?.id||0};
     const {data:created}=await sb.from("creditos").insert(data).select().single();
     if(created)setCreditos(cs=>[...cs,creditoFromDB(created)]);
@@ -2339,11 +2451,25 @@ const Creditos=({creditos,setCreditos,clients,usuarioActual,soloVer=false,t})=>{
       <Modal open={modal} onClose={()=>setModal(false)} title="Nuevo crédito" t={t}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
           <div style={{gridColumn:"1/-1"}}><ClienteBuscador clients={clients} t={t} onSelect={c=>setForm(f=>({...f,clienteId:c?c.id:""}))}/></div>
+          {/* Aviso de operaciones activas del cliente elegido */}
+          <div style={{gridColumn:"1/-1"}}><ResumenClienteSel clienteId={form.clienteId} creditos={creditos} productos={productos} t={t}/></div>
           <Field label="Monto prestado ($) *" value={form.monto} onChange={v=>setForm(f=>({...f,monto:v}))} type="number" t={t}/>
           <Field label="Total a cobrar ($) *" value={form.totalCobrar} onChange={v=>setForm(f=>({...f,totalCobrar:v}))} type="number" t={t}/>
           <Field label="Cantidad de cuotas *" value={form.cuotas} onChange={v=>setForm(f=>({...f,cuotas:v}))} type="number" t={t}/>
           <Field label="Frecuencia" value={form.frecuencia} onChange={v=>setForm(f=>({...f,frecuencia:v}))} options={FRECUENCIAS} t={t}/>
-          <Field label="Fecha otorgamiento" value={form.fechaOtorg} onChange={v=>setForm(f=>({...f,fechaOtorg:v}))} type="date" t={t}/>
+          <Field label="Fecha otorgamiento" value={form.fechaOtorg} onChange={v=>setForm(f=>({...f,fechaOtorg:v,primerPago:""}))} type="date" t={t}/>
+          {/* Fecha del 1° cobro — editable */}
+          <div style={{marginBottom:14}}>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>
+              Fecha 1° cobro {primerPagoEditado&&<span style={{color:"#f59e0b",fontWeight:800}}>· editada</span>}
+            </label>
+            <input type="date" value={primerPagoReal} onChange={e=>setForm(f=>({...f,primerPago:e.target.value}))}
+              style={{width:"100%",padding:"9px 12px",borderRadius:8,border:`1px solid ${primerPagoEditado?"#f59e0b":t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:3,gap:6}}>
+              <span style={{fontSize:10,color:t.sub}}>Las demás cuotas salen de acá</span>
+              {primerPagoEditado&&<button onClick={()=>setForm(f=>({...f,primerPago:""}))} style={{background:"none",border:"none",color:t.accent,fontSize:10,fontWeight:700,cursor:"pointer",textDecoration:"underline",padding:0}}>Restablecer</button>}
+            </div>
+          </div>
           <Field label="Estado" value={form.estado} onChange={v=>setForm(f=>({...f,estado:v}))} options={["Al día","Pendiente","Atrasado","Moroso"]} t={t}/>
         </div>
         {form.monto&&form.totalCobrar&&form.cuotas&&<div style={{background:t.bg,borderRadius:10,padding:"14px 16px",marginBottom:14,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
@@ -2392,7 +2518,7 @@ const Creditos=({creditos,setCreditos,clients,usuarioActual,soloVer=false,t})=>{
     </div>
   );
 };
-const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,usuarioActual,soloVer=false,t})=>{
+const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,creditos=[],usuarioActual,soloVer=false,t})=>{
   const [modal,setModal]=useState(false);
   const [modalContado,setModalContado]=useState(false);
   const [editModal,setEditModal]=useState(false);
@@ -2402,8 +2528,12 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
   const [loading,setLoading]=useState(false);
   const [searchProd,setSearchProd]=useState("");
   const [filtroEstProd,setFiltroEstProd]=useState("Todos");
-  const EF={clienteId:"",producto:"",inversion:"",precioFinanciado:"",cuotas:"",frecuencia:"Mensual",estado:"Activo",fechaOtorg:new Date().toISOString().slice(0,10),entrega:""};
+  const EF={clienteId:"",producto:"",inversion:"",precioFinanciado:"",cuotas:"",frecuencia:"Mensual",estado:"Activo",fechaOtorg:new Date().toISOString().slice(0,10),primerPago:"",entrega:""};
   const [form,setForm]=useState(EF);
+  // Fecha sugerida del 1° cobro y la real (editable)
+  const primerPagoAutoP=generarFechasCuotas(form.fechaOtorg,form.frecuencia,1)[0]||"";
+  const primerPagoRealP=form.primerPago||primerPagoAutoP;
+  const primerPagoEditadoP=!!form.primerPago&&form.primerPago!==primerPagoAutoP;
   const EFC={producto:"",clienteNombre:"",costo:"",precioVenta:"",fecha:new Date().toISOString().slice(0,10),notas:""};
   const [formC,setFormC]=useState(EFC);
   const [formEdit,setFormEdit]=useState({inversion:"",precioFinanciado:"",cuotas:"",frecuencia:"Mensual",estado:"Activo"});
@@ -2429,7 +2559,7 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
     setLoading(true);
     const vc=Math.round(+form.precioFinanciado/+form.cuotas);
     const det=crearDetalleCuotas(form.fechaOtorg,form.frecuencia,+form.cuotas,vc);
-    const entregaN=+form.entrega||0;const vc2=Math.round(+form.precioFinanciado/+form.cuotas);const det2=crearDetalleCuotas(form.fechaOtorg,form.frecuencia,+form.cuotas,vc2);const data={cliente_id:+form.clienteId,cliente_nombre:`${client.nombre} ${client.apellido}`,producto:form.producto,inversion:+form.inversion,precio_financiado:+form.precioFinanciado,ganancia:+form.precioFinanciado-+form.inversion,cuotas:+form.cuotas,cuotas_pagadas:0,saldo_cobrado:0,saldo_pendiente:+form.precioFinanciado,valor_cuota:vc2,estado:form.estado,frecuencia:form.frecuencia,usuario_id:usuarioActual?.id||0,detalle_cuotas:det2,fecha_otorg:form.fechaOtorg,proximo_pago:det2[0]?.fechaVenc||"",entrega:entregaN};
+    const entregaN=+form.entrega||0;const vc2=Math.round(+form.precioFinanciado/+form.cuotas);const det2=crearDetalleCuotasDesde(primerPagoRealP,form.frecuencia,+form.cuotas);const data={cliente_id:+form.clienteId,cliente_nombre:`${client.nombre} ${client.apellido}`,producto:form.producto,inversion:+form.inversion,precio_financiado:+form.precioFinanciado,ganancia:+form.precioFinanciado-+form.inversion,cuotas:+form.cuotas,cuotas_pagadas:0,saldo_cobrado:0,saldo_pendiente:+form.precioFinanciado,valor_cuota:vc2,estado:form.estado,frecuencia:form.frecuencia,usuario_id:usuarioActual?.id||0,detalle_cuotas:det2,fecha_otorg:form.fechaOtorg,proximo_pago:det2[0]?.fechaVenc||"",entrega:entregaN};
     const {data:created}=await sb.from("productos").insert(data).select().single();
     if(created)setProductos(ps=>[...ps,productoFromDB(created)]);
     setLoading(false);setModal(false);setForm(EF);
@@ -2617,12 +2747,26 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
       <Modal open={modal} onClose={()=>setModal(false)} title="Nueva venta financiada" t={t}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
           <div style={{gridColumn:"1/-1"}}><ClienteBuscador clients={clients} t={t} onSelect={c=>setForm(f=>({...f,clienteId:c?c.id:""}))}/></div>
+          {/* Aviso de operaciones activas del cliente elegido */}
+          <div style={{gridColumn:"1/-1"}}><ResumenClienteSel clienteId={form.clienteId} creditos={creditos} productos={productos} t={t}/></div>
           <div style={{gridColumn:"1/-1"}}><Field label="Producto *" value={form.producto} onChange={v=>setForm(f=>({...f,producto:v}))} t={t} placeholder="Ej: iPhone 15, Heladera..."/></div>
           <Field label="Tu inversión ($) *" value={form.inversion} onChange={v=>setForm(f=>({...f,inversion:v}))} type="number" t={t}/>
           <Field label="Precio financiado ($)" value={form.precioFinanciado} onChange={v=>setForm(f=>({...f,precioFinanciado:v}))} type="number" t={t}/>
           <Field label="Cuotas *" value={form.cuotas} onChange={v=>setForm(f=>({...f,cuotas:v}))} type="number" t={t}/>
           <Field label="Frecuencia" value={form.frecuencia} onChange={v=>setForm(f=>({...f,frecuencia:v}))} options={FRECUENCIAS} t={t}/>
-          <Field label="Fecha otorgamiento" value={form.fechaOtorg} onChange={v=>setForm(f=>({...f,fechaOtorg:v}))} type="date" t={t}/>
+          <Field label="Fecha otorgamiento" value={form.fechaOtorg} onChange={v=>setForm(f=>({...f,fechaOtorg:v,primerPago:""}))} type="date" t={t}/>
+          {/* Fecha del 1° cobro — editable */}
+          <div style={{marginBottom:14}}>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>
+              Fecha 1° cobro {primerPagoEditadoP&&<span style={{color:"#f59e0b",fontWeight:800}}>· editada</span>}
+            </label>
+            <input type="date" value={primerPagoRealP} onChange={e=>setForm(f=>({...f,primerPago:e.target.value}))}
+              style={{width:"100%",padding:"9px 12px",borderRadius:8,border:`1px solid ${primerPagoEditadoP?"#f59e0b":t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:3,gap:6}}>
+              <span style={{fontSize:10,color:t.sub}}>Las demás cuotas salen de acá</span>
+              {primerPagoEditadoP&&<button onClick={()=>setForm(f=>({...f,primerPago:""}))} style={{background:"none",border:"none",color:t.accent,fontSize:10,fontWeight:700,cursor:"pointer",textDecoration:"underline",padding:0}}>Restablecer</button>}
+            </div>
+          </div>
           <Field label="Entrega / Adelanto ($)" value={form.entrega} onChange={v=>setForm(f=>({...f,entrega:v}))} type="number" t={t} placeholder="0 si no hay adelanto"/>
           <Field label="Estado" value={form.estado} onChange={v=>setForm(f=>({...f,estado:v}))} options={["Activo","Atrasado","Moroso"]} t={t}/>
         </div>
@@ -3185,6 +3329,49 @@ export default function App(){
     </div>
   );
 
+  // ── VERIFICACIÓN DE SUSCRIPCIÓN ──
+  const esAndres=usuarioActual?.user==="andres";
+  const suscripcionVencida=(()=>{
+    if(esAndres)return false; // el admin dueño nunca se bloquea
+    if(!usuarioActual?.fechaVencimiento)return false;
+    return new Date(usuarioActual.fechaVencimiento)<new Date();
+  })();
+  const diasRestantes=(()=>{
+    if(!usuarioActual?.fechaVencimiento)return null;
+    const diff=new Date(usuarioActual.fechaVencimiento)-new Date();
+    return Math.ceil(diff/(1000*60*60*24));
+  })();
+
+  if(suscripcionVencida){
+    return(
+      <div style={{minHeight:"100vh",background:t.bg,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Segoe UI',system-ui,sans-serif",padding:20}}>
+        <div style={{background:t.card,borderRadius:20,padding:"40px 36px",maxWidth:420,width:"100%",boxShadow:"0 24px 64px rgba(0,0,0,0.3)",border:`1px solid ${t.border}`,textAlign:"center"}}>
+          <div style={{fontSize:52,marginBottom:16}}>🔒</div>
+          <h1 style={{fontSize:22,fontWeight:900,color:t.text,margin:"0 0 8px"}}>Tu suscripción venció</h1>
+          <p style={{fontSize:14,color:t.sub,margin:"0 0 24px",lineHeight:1.5}}>
+            Hola {usuarioActual?.nombre}, tu período de acceso a ControlCredit finalizó. Renová tu suscripción para seguir usando la app con todos tus datos.
+          </p>
+          <div style={{background:`${t.accent}12`,border:`1px solid ${t.accent}30`,borderRadius:12,padding:"16px",marginBottom:20}}>
+            <div style={{fontSize:11,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Plan Pro</div>
+            <div style={{fontSize:28,fontWeight:900,color:t.text}}>$X.XXX<span style={{fontSize:14,color:t.sub,fontWeight:600}}>/mes</span></div>
+            <div style={{fontSize:12,color:t.sub,marginTop:4}}>Acceso completo · Todos tus datos guardados</div>
+          </div>
+          <button onClick={()=>alert("Acá irá el link de pago de Mercado Pago")}
+            style={{width:"100%",padding:"14px",borderRadius:12,border:"none",background:t.accent,color:"#fff",fontWeight:800,fontSize:16,cursor:"pointer",marginBottom:12}}>
+            💳 Renovar suscripción
+          </button>
+          <p style={{fontSize:12,color:t.sub,margin:"0 0 16px"}}>
+            Tus datos están guardados y seguros. Al renovar, todo vuelve exactamente como estaba.
+          </p>
+          <button onClick={()=>{setLoggedIn(false);setUsuarioActual(null);}}
+            style={{background:"none",border:"none",color:t.sub,fontSize:13,cursor:"pointer",textDecoration:"underline"}}>
+            Cerrar sesión
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const NAV=[
     {id:"dashboard",label:"Dashboard",icon:"dashboard"},
     {id:"clientes",label:"Clientes",icon:"users"},
@@ -3417,8 +3604,8 @@ export default function App(){
 
           {screen==="dashboard"&&<Dashboard clients={clients} creditos={creditos} setCreditos={setCreditos} productos={productos} setProductos={setProductos} ventasContado={ventasContado} t={t}/>}
           {screen==="clientes"&&<Clientes clients={clients} setClients={setClients} creditos={creditos} setCreditos={setCreditos} productos={productos} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
-          {screen==="creditos"&&<Creditos creditos={creditos} setCreditos={setCreditos} clients={clients} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
-          {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
+          {screen==="creditos"&&<Creditos creditos={creditos} setCreditos={setCreditos} clients={clients} productos={productos} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
+          {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} creditos={creditos} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
           {screen==="cartera"&&<Cartera creditos={creditos} productos={productos} clients={clients} t={t}/>}
           {screen==="alertas"&&<Alertas creditos={creditos} clients={clients} t={t}/>}
           {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t} allClients={allClients} allCreditos={allCreditos} allProductos={allProductos} allVentasContado={allVentasContado}/>}
@@ -3552,6 +3739,7 @@ export default function App(){
             {offline&&<div style={{background:"#ef4444",color:"#fff",borderRadius:8,padding:"4px 12px",fontSize:12,fontWeight:700,display:"flex",alignItems:"center",gap:5}}>📵 Sin internet</div>}
             {sincronizando&&<div style={{background:"#f59e0b",color:"#fff",borderRadius:8,padding:"4px 12px",fontSize:12,fontWeight:700}}>⏳ Sincronizando...</div>}
             {mostrarBannerSync&&!sincronizando&&<div style={{background:"#10b981",color:"#fff",borderRadius:8,padding:"4px 12px",fontSize:12,fontWeight:700}}>✅ Sincronizado</div>}
+            {!esAndres&&diasRestantes!==null&&diasRestantes<=5&&diasRestantes>0&&<div style={{display:"flex",alignItems:"center",gap:6,background:"#fef3c7",color:"#92400e",borderRadius:8,padding:"4px 10px",fontSize:12,fontWeight:700}}>⏰ Tu suscripción vence en {diasRestantes} día{diasRestantes!==1?"s":""}</div>}
             {alertCount>0&&<div style={{display:"flex",alignItems:"center",gap:6,background:"#fef3c7",color:"#92400e",borderRadius:8,padding:"4px 10px",fontSize:12,fontWeight:600}}><Icon name="alert" size={14}/>{alertCount} alertas</div>}
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               <div style={{width:32,height:32,borderRadius:"50%",background:t.accent,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:700,fontSize:13}}>{(usuarioActual?.nombre||"A")[0].toUpperCase()}</div>
@@ -3562,8 +3750,8 @@ export default function App(){
         <main style={{flex:1,padding:"26px",overflowY:"auto"}}>
           {screen==="dashboard"&&<Dashboard clients={clients} creditos={creditos} setCreditos={setCreditos} productos={productos} setProductos={setProductos} ventasContado={ventasContado} t={t}/>}
           {screen==="clientes"&&<Clientes clients={clients} setClients={setClients} creditos={creditos} setCreditos={setCreditos} productos={productos} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
-          {screen==="creditos"&&<Creditos creditos={creditos} setCreditos={setCreditos} clients={clients} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
-          {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
+          {screen==="creditos"&&<Creditos creditos={creditos} setCreditos={setCreditos} clients={clients} productos={productos} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
+          {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} creditos={creditos} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
           {screen==="cartera"&&<Cartera creditos={creditos} productos={productos} clients={clients} t={t}/>}
           {screen==="alertas"&&<Alertas creditos={creditos} clients={clients} t={t}/>}
           {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t} allClients={allClients} allCreditos={allCreditos} allProductos={allProductos} allVentasContado={allVentasContado}/>}

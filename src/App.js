@@ -635,7 +635,7 @@ const Modal=({open,onClose,title,children,t,wide})=>{
   if(!open)return null;
   return(
     <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)"}}>
-      <div style={{background:t.card,borderRadius:16,padding:"28px 32px",minWidth:400,maxWidth:wide?800:660,width:"94%",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(0,0,0,0.35)",border:`1px solid ${t.border}`}}>
+      <div className="cc-modal" style={{background:t.card,borderRadius:16,padding:"28px 32px",minWidth:400,maxWidth:wide?800:660,width:"94%",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(0,0,0,0.35)",border:`1px solid ${t.border}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
           <h2 style={{margin:0,fontSize:18,fontWeight:700,color:t.text}}>{title}</h2>
           <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:t.sub,padding:4}}><Icon name="close" size={20}/></button>
@@ -3697,7 +3697,33 @@ export default function App(){
           </>
         )}
 
-        <style>{`@keyframes fadeSlideUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}`}</style>
+        <style>{`
+          @keyframes fadeSlideUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+          /* ══ MEJORAS TÁCTILES MÓVIL ══ */
+          /* Inputs a 16px: elimina el auto-zoom molesto de Safari en iPhone */
+          input,select,textarea{font-size:16px !important;}
+          input,select{min-height:46px !important;box-sizing:border-box;}
+          textarea{min-height:72px !important;}
+
+          /* Todo botón alcanza área táctil cómoda (guía Apple: 44px) */
+          button{min-height:44px !important;touch-action:manipulation;}
+          a{touch-action:manipulation;}
+          *{-webkit-tap-highlight-color:rgba(59,130,246,0.18);}
+
+          /* Botones dentro de tablas: un poco menores pero igual tocables */
+          table button{min-height:38px !important;min-width:38px !important;}
+          table td,table th{padding-top:11px !important;padding-bottom:11px !important;}
+
+          /* Modales: que no desborden en pantallas angostas (iPhone = 375-390px) */
+          .cc-modal{min-width:unset !important;width:96% !important;max-width:96vw !important;padding:20px 16px !important;border-radius:14px !important;}
+
+          /* Selectores y fechas nativas más cómodos */
+          input[type="date"]{-webkit-appearance:none;appearance:none;}
+
+          /* Scroll suave en paneles internos */
+          *{-webkit-overflow-scrolling:touch;}
+        `}</style>
       </div>
     );
   }

@@ -728,7 +728,7 @@ const TablaCuotas=({credito,onActualizar,t})=>{
     // Recalcular total cobrar y pendiente
     const nuevoTotal=credito.totalCobrar+diferencia;
     const totalCobrado=nuevos.reduce((s,d)=>s+d.montoPagado,0);
-    const totalPendiente=Math.max(0,nuevoTotal-totalCobrado);
+    const totalPendiente=nuevos.reduce((sp,dp)=>sp+Math.max(0,(dp.valorCuotaEditado||credito.valorCuota)-dp.montoPagado),0);
     onActualizar({...credito,detalleCuotas:nuevos,totalCobrar:nuevoTotal,saldoPendiente:totalPendiente,
       historial:[...credito.historial,{tipo:"edicion_valor_cuota",cuota:editIdx+1,valorAnterior,nuevoValor,fecha:new Date().toLocaleDateString("es-AR")}]});
     setEditIdx(null);
@@ -742,7 +742,7 @@ const TablaCuotas=({credito,onActualizar,t})=>{
     nuevos[editIdx]={...nuevos[editIdx],montoPagado:p,estado:p<=0?"Pendiente":p>=vc?"Pagada":"Parcial",fechaPago:p>0?new Date().toLocaleDateString("es-AR"):null};
     const totalCobrado=nuevos.reduce((s,d)=>s+d.montoPagado,0);
     const nuevoTotal=nuevos.reduce((s,d)=>s+(d.valorCuotaEditado||credito.valorCuota),0);
-    const totalPendiente=Math.max(0,nuevoTotal-totalCobrado);
+    const totalPendiente=nuevos.reduce((sp,dp)=>sp+Math.max(0,(dp.valorCuotaEditado||credito.valorCuota)-dp.montoPagado),0);
     const cuotasPagadas=nuevos.filter(d=>d.estado==="Pagada").length;
     const proxPendiente=nuevos.find(d=>d.estado!=="Pagada");
     const nuevoEstado=totalPendiente<=0?"Finalizado":credito.estado==="Moroso"&&p>0?"Atrasado":credito.estado;
@@ -847,7 +847,7 @@ const TablaCuotas=({credito,onActualizar,t})=>{
                         nuevos[i]={...nuevos[i],montoPagado:vc,estado:"Pagada",fechaPago:new Date().toLocaleDateString("es-AR")};
                         const totalCobrado=nuevos.reduce((s,x)=>s+x.montoPagado,0);
                         const nuevoTotal=nuevos.reduce((s,x)=>s+(x.valorCuotaEditado||credito.valorCuota),0);
-                        const totalPendiente=Math.max(0,nuevoTotal-totalCobrado);
+                        const totalPendiente=nuevos.reduce((sp,dp)=>sp+Math.max(0,(dp.valorCuotaEditado||credito.valorCuota)-dp.montoPagado),0);
                         const cuotasPagadas=nuevos.filter(x=>x.estado==="Pagada").length;
                         const proxPendiente=nuevos.find(x=>x.estado!=="Pagada");
                         const nuevoEstado=totalPendiente<=0?"Finalizado":credito.estado==="Moroso"?"Atrasado":credito.estado;
@@ -878,7 +878,7 @@ const TablaCuotas=({credito,onActualizar,t})=>{
                               nuevos[i]={...nuevos[i],montoPagado:montoFinal,estado:"Pagada",fechaPago:new Date().toLocaleDateString("es-AR"),valorCuotaEditado:montoFinal};
                               const totalCobrado=nuevos.reduce((s,x)=>s+x.montoPagado,0);
                               const nuevoTotal=nuevos.reduce((s,x)=>s+(x.valorCuotaEditado||credito.valorCuota),0);
-                              const totalPendiente=Math.max(0,nuevoTotal-totalCobrado);
+                              const totalPendiente=nuevos.reduce((sp,dp)=>sp+Math.max(0,(dp.valorCuotaEditado||credito.valorCuota)-dp.montoPagado),0);
                               const cuotasPagadas=nuevos.filter(x=>x.estado==="Pagada").length;
                               const proxPendiente=nuevos.find(x=>x.estado!=="Pagada");
                               const nuevoEstado=totalPendiente<=0?"Finalizado":credito.estado;
@@ -897,7 +897,7 @@ const TablaCuotas=({credito,onActualizar,t})=>{
                         nuevos[i]={...nuevos[i],montoPagado:0,estado:"Pendiente",fechaPago:null};
                         const totalCobrado=Math.max(0,nuevos.reduce((s,x)=>s+x.montoPagado,0));
                         const nuevoTotal=nuevos.reduce((s,x)=>s+(x.valorCuotaEditado||credito.valorCuota),0);
-                        const totalPendiente=Math.max(0,nuevoTotal-totalCobrado);
+                        const totalPendiente=nuevos.reduce((sp,dp)=>sp+Math.max(0,(dp.valorCuotaEditado||credito.valorCuota)-dp.montoPagado),0);
                         const cuotasPagadas=nuevos.filter(x=>x.estado==="Pagada").length;
                         const proxPendiente=nuevos.find(x=>x.estado!=="Pagada");
                         onActualizar({...credito,detalleCuotas:nuevos,saldoCobrado:totalCobrado,saldoPendiente:totalPendiente,totalCobrar:nuevoTotal,cuotasPagadas,proximoPago:proxPendiente?.fechaVenc||credito.proximoPago,estado:"Al día",historial:[...credito.historial,{tipo:"restablecer_cuota",cuota:i+1,fecha:new Date().toLocaleDateString("es-AR")}]});
@@ -1805,7 +1805,7 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
                             det[idx]={...det[idx],montoPagado:vc,estado:"Pagada",fechaPago:new Date().toLocaleDateString("es-AR")};
                             const totalCobrado=det.reduce((s,d)=>s+d.montoPagado,0);
                             const nuevoTotal=det.reduce((s,d)=>s+(d.valorCuotaEditado||c.valorCuota),0);
-                            const pendiente=Math.max(0,nuevoTotal-totalCobrado);
+                            const pendiente=det.reduce((sp,dp)=>sp+Math.max(0,(dp.valorCuotaEditado||c.valorCuota)-dp.montoPagado),0);
                             const pagadas=det.filter(d=>d.estado==="Pagada").length;
                             const prox=det.find(d=>d.estado!=="Pagada");
                             const nuevoEstado=pendiente<=0?"Finalizado":"Al día";
@@ -3422,7 +3422,7 @@ export default function App(){
       det[idx]={...det[idx],montoPagado:vc,estado:"Pagada",fechaPago:new Date().toLocaleDateString("es-AR")};
       const totalCobrado=det.reduce((s,d)=>s+d.montoPagado,0);
       const nuevoTotal=det.reduce((s,d)=>s+(d.valorCuotaEditado||c.valorCuota),0);
-      const pendiente=Math.max(0,nuevoTotal-totalCobrado);
+      const pendiente=det.reduce((sp,dp)=>sp+Math.max(0,(dp.valorCuotaEditado||c.valorCuota)-dp.montoPagado),0);
       const pagadas=det.filter(d=>d.estado==="Pagada").length;
       const proxPend=det.find(d=>d.estado!=="Pagada");
       const nuevoEstado=pendiente<=0?"Finalizado":"Al día";

@@ -1292,9 +1292,7 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
   const [tabPagos,setTabPagos]=useState("aldia");
   const [ordenRank,setOrdenRank]=useState("ganEsp");
   const [clienteExpandido,setClienteExpandido]=useState(null);
-  const [editandoMeta,setEditandoMeta]=useState(false);
-  const [meta,setMeta]=useState({ganancia:"",clientes:""});
-  const [metaGuardada,setMetaGuardada]=useState({ganancia:0,clientes:0});
+  const [mesSel,setMesSel]=useState(hoy.getMonth()); // mes seleccionado para el panel mensual (0-11)
   const [emailBackup,setEmailBackup]=useState("");
   const [showEmailInput,setShowEmailInput]=useState(false);
 
@@ -1478,113 +1476,137 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
         <MetricCard label="Prod. activos" value={productosActivos.length} icon="productos" color="#10b981" t={t}/>
       </div>
 
-      {/* ── METAS ── */}
-      <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"20px 24px",marginBottom:20}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <div>
-            <h3 style={{margin:"0 0 3px",fontSize:16,fontWeight:800,color:t.text}}>🎯 Mis Metas</h3>
-            <p style={{margin:0,fontSize:12,color:t.sub}}>Seguí tu progreso hacia tus objetivos</p>
-          </div>
-          <button onClick={()=>setEditandoMeta(e=>!e)} style={{background:editandoMeta?t.accent:"none",border:`1px solid ${t.accent}`,color:editandoMeta?"#fff":t.accent,borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
-            <Icon name="edit" size={13}/>{editandoMeta?"Cerrar":"Editar metas"}
-          </button>
-        </div>
+      {/* ── PANEL MENSUAL ── */}
+      {(()=>{
+        const MESES=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+        const MESES_CORTO=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+        const anioSel=hoy.getFullYear();
+        const desde=`${anioSel}-${String(mesSel+1).padStart(2,"0")}-01`;
+        const ultimoDiaMes=new Date(anioSel,mesSel+1,0).getDate();
+        const hasta=`${anioSel}-${String(mesSel+1).padStart(2,"0")}-${String(ultimoDiaMes).padStart(2,"0")}`;
+        // convierte fechaPago "dd/mm/yyyy" a ISO para comparar
+        const pagoEnMes=(fp)=>{
+          if(!fp)return false;
+          const p=fp.split("/");
+          if(p.length<3)return false;
+          const iso=`${p[2]}-${p[1].padStart(2,"0")}-${p[0].padStart(2,"0")}`;
+          return iso>=desde&&iso<=hasta;
+        };
 
-        {editandoMeta&&(
-          <div style={{background:t.bg,borderRadius:10,padding:"16px 18px",marginBottom:16,display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-            <div>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:5,textTransform:"uppercase"}}>Meta de ganancia ($)</label>
-              <input type="number" value={meta.ganancia} onChange={e=>setMeta(m=>({...m,ganancia:e.target.value}))} placeholder="Ej: 3000000" style={{width:"100%",padding:"9px 12px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
-            </div>
-            <div>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:5,textTransform:"uppercase"}}>Meta de nuevos clientes</label>
-              <input type="number" value={meta.clientes} onChange={e=>setMeta(m=>({...m,clientes:e.target.value}))} placeholder="Ej: 10" style={{width:"100%",padding:"9px 12px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
-            </div>
-            <div style={{gridColumn:"1/-1",display:"flex",justifyContent:"flex-end",gap:8}}>
-              <button onClick={()=>setEditandoMeta(false)} style={{padding:"8px 16px",borderRadius:8,border:`1px solid ${t.border}`,background:"none",color:t.sub,cursor:"pointer",fontWeight:600,fontSize:12}}>Cancelar</button>
-              <button onClick={()=>{setMetaGuardada({ganancia:+meta.ganancia||0,clientes:+meta.clientes||0});setEditandoMeta(false);}} style={{padding:"8px 16px",borderRadius:8,border:"none",background:t.accent,color:"#fff",cursor:"pointer",fontWeight:700,fontSize:12}}>Guardar metas</button>
-            </div>
-          </div>
-        )}
+        // ── RECAUDADO EN EL MES (cuotas efectivamente pagadas ese mes) ──
+        let recaudadoMes=0, capitalRecuperadoMes=0, gananciaMes=0, morasMes=0, cuotasCobradas=0;
+        [...creditos,...productos].forEach(o=>{
+          const esProd=o.inversion!==undefined;
+          const capitalTotal=esProd?o.inversion:o.monto;
+          const capitalPorCuota=capitalTotal/(o.cuotas||1);
+          const valorCuotaBase=o.valorCuota||0;
+          (o.detalleCuotas||[]).forEach(d=>{
+            if(d.estado==="Pagada"&&pagoEnMes(d.fechaPago)){
+              recaudadoMes+=d.montoPagado||0;
+              capitalRecuperadoMes+=capitalPorCuota;
+              gananciaMes+=(d.montoPagado||0)-capitalPorCuota;
+              const extra=(d.valorCuotaEditado||valorCuotaBase)-valorCuotaBase;
+              if(extra>0)morasMes+=Math.min(extra,d.montoPagado||0);
+              cuotasCobradas++;
+            }
+          });
+        });
+        // ventas de contado del mes
+        const ventasMesContado=(ventasContado||[]).filter(v=>v.fecha>=desde&&v.fecha<=hasta);
+        const recaudadoContado=ventasMesContado.reduce((s,v)=>s+(v.precio_venta||0),0);
+        const gananciaContado=ventasMesContado.reduce((s,v)=>s+(v.ganancia||0),0);
+        recaudadoMes+=recaudadoContado;
+        gananciaMes+=gananciaContado;
 
-        {metaGuardada.ganancia===0&&metaGuardada.clientes===0?(
-          <div style={{textAlign:"center",padding:"20px 0",color:t.sub}}>
-            <div style={{fontSize:28,marginBottom:8}}>🎯</div>
-            <div style={{fontSize:13,color:t.sub}}>Tocá <strong style={{color:t.accent}}>"Editar metas"</strong> para definir tus objetivos de ganancia y clientes</div>
-          </div>
-        ):(
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-            {/* META GANANCIA */}
-            {metaGuardada.ganancia>0&&(()=>{
-              const actual=ganReal;
-              const pct=Math.min(100,Math.round((actual/metaGuardada.ganancia)*100));
-              const falta=Math.max(0,metaGuardada.ganancia-actual);
-              const color=pct>=100?"#10b981":pct>=50?"#3b82f6":"#f59e0b";
-              return(
-                <div style={{background:t.bg,borderRadius:12,padding:"18px 20px"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
-                    <div>
-                      <div style={{fontSize:11,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Meta de ganancia</div>
-                      <div style={{fontSize:20,fontWeight:900,color:t.text}}>{fmt(metaGuardada.ganancia)}</div>
-                    </div>
-                    <div style={{width:48,height:48,borderRadius:"50%",background:`${color}20`,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column"}}>
-                      <div style={{fontSize:13,fontWeight:900,color}}>{pct}%</div>
-                    </div>
-                  </div>
-                  <div style={{marginBottom:10}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:5,fontSize:11}}>
-                      <span style={{color:t.sub}}>Ganado: <strong style={{color}}>{fmt(actual)}</strong></span>
-                      <span style={{color:t.sub}}>Falta: <strong style={{color:"#ef4444"}}>{fmt(falta)}</strong></span>
-                    </div>
-                    <div style={{height:12,borderRadius:6,background:t.border,overflow:"hidden"}}>
-                      <div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${color},${color}cc)`,borderRadius:6,transition:"width 0.7s"}}/>
-                    </div>
-                  </div>
-                  {pct>=100?(
-                    <div style={{fontSize:12,color:"#10b981",fontWeight:700,textAlign:"center"}}>🎉 ¡Meta cumplida!</div>
-                  ):(
-                    <div style={{fontSize:11,color:t.sub,textAlign:"center"}}>Te faltan <strong style={{color:t.text}}>{fmt(falta)}</strong> para llegar</div>
-                  )}
+        // ── COLOCADO EN EL MES (créditos/ventas otorgados ese mes) ──
+        const credsMes=creditos.filter(c=>c.fechaOtorg>=desde&&c.fechaOtorg<=hasta);
+        const prodsMes=productos.filter(p=>p.fechaOtorg&&p.fechaOtorg>=desde&&p.fechaOtorg<=hasta);
+        const capitalColocado=credsMes.reduce((s,c)=>s+c.monto,0)+prodsMes.reduce((s,p)=>s+p.inversion,0);
+        const clientesNuevosMes=clients.filter(c=>{
+          // si el cliente tiene su primer crédito/producto en este mes cuenta como nuevo
+          const suPrimera=[...creditos,...productos].filter(o=>o.clienteId===c.id).map(o=>o.fechaOtorg).filter(Boolean).sort()[0];
+          return suPrimera&&suPrimera>=desde&&suPrimera<=hasta;
+        }).length;
+        const nuevasOps=credsMes.length+prodsMes.length+ventasMesContado.length;
+
+        // ── STOCK: capital todavía en la calle de lo colocado este mes ──
+        const capitalEnStockMes=credsMes.reduce((s,c)=>s+(c.monto-(c.monto*(c.cuotasPagadas/c.cuotas))),0)
+          +prodsMes.reduce((s,p)=>s+(p.inversion-(p.inversion*(p.cuotasPagadas/p.cuotas))),0);
+
+        const esMesActual=mesSel===hoy.getMonth();
+
+        return(
+          <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"20px 24px",marginBottom:20}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
+              <div>
+                <h3 style={{margin:"0 0 3px",fontSize:16,fontWeight:800,color:t.text}}>📅 Resumen mensual — {MESES[mesSel]} {anioSel}</h3>
+                <p style={{margin:0,fontSize:12,color:t.sub}}>Movimientos que pasaron solo en este mes {esMesActual&&<span style={{color:t.accent,fontWeight:700}}>· mes actual</span>}</p>
+              </div>
+            </div>
+
+            {/* Selector de 12 meses */}
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:18}}>
+              {MESES_CORTO.map((m,i)=>(
+                <button key={i} onClick={()=>setMesSel(i)}
+                  style={{padding:"7px 12px",borderRadius:8,border:`1px solid ${mesSel===i?t.accent:t.border}`,background:mesSel===i?t.accent:"transparent",color:mesSel===i?"#fff":t.sub,fontWeight:mesSel===i?700:500,fontSize:12,cursor:"pointer",transition:"all 0.15s",minWidth:44}}>
+                  {m}{i===hoy.getMonth()&&<span style={{fontSize:8,marginLeft:2}}>•</span>}
+                </button>
+              ))}
+            </div>
+
+            {/* Métricas del mes */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:12}}>
+              <div style={{background:"#10b98115",borderRadius:12,padding:"14px 18px",border:"1px solid #10b98130"}}>
+                <div style={{fontSize:10,color:"#10b981",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>💰 Recaudado en el mes</div>
+                <div style={{fontSize:20,fontWeight:900,color:"#10b981"}}>{fmt(recaudadoMes)}</div>
+                <div style={{fontSize:11,color:t.sub,marginTop:2}}>{cuotasCobradas} cuota{cuotasCobradas!==1?"s":""} cobrada{cuotasCobradas!==1?"s":""}{recaudadoContado>0?` + contado`:""}</div>
+              </div>
+
+              <div style={{background:"#8b5cf615",borderRadius:12,padding:"14px 18px",border:"1px solid #8b5cf630"}}>
+                <div style={{fontSize:10,color:"#8b5cf6",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>📈 Ganancia del mes</div>
+                <div style={{fontSize:20,fontWeight:900,color:"#8b5cf6"}}>{fmt(gananciaMes)}</div>
+                <div style={{fontSize:11,color:t.sub,marginTop:2}}>Intereses ya realizados</div>
+              </div>
+
+              <div style={{background:"#3b82f615",borderRadius:12,padding:"14px 18px",border:"1px solid #3b82f630"}}>
+                <div style={{fontSize:10,color:"#3b82f6",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>🏦 Capital recuperado</div>
+                <div style={{fontSize:20,fontWeight:900,color:t.text}}>{fmt(capitalRecuperadoMes)}</div>
+                <div style={{fontSize:11,color:t.sub,marginTop:2}}>Tu plata que volvió</div>
+              </div>
+
+              <div style={{background:"#f59e0b15",borderRadius:12,padding:"14px 18px",border:"1px solid #f59e0b30"}}>
+                <div style={{fontSize:10,color:"#f59e0b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>📤 Capital colocado</div>
+                <div style={{fontSize:20,fontWeight:900,color:t.text}}>{fmt(capitalColocado)}</div>
+                <div style={{fontSize:11,color:t.sub,marginTop:2}}>{nuevasOps} operación{nuevasOps!==1?"es":""} nueva{nuevasOps!==1?"s":""}</div>
+              </div>
+
+              <div style={{background:"#ef444415",borderRadius:12,padding:"14px 18px",border:"1px solid #ef444430"}}>
+                <div style={{fontSize:10,color:"#ef4444",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>📦 Capital en stock del mes</div>
+                <div style={{fontSize:20,fontWeight:900,color:t.text}}>{fmt(capitalEnStockMes)}</div>
+                <div style={{fontSize:11,color:t.sub,marginTop:2}}>De lo colocado en {MESES_CORTO[mesSel]}, sin volver</div>
+              </div>
+
+              {morasMes>0&&(
+                <div style={{background:"#f59e0b15",borderRadius:12,padding:"14px 18px",border:"1px solid #f59e0b30"}}>
+                  <div style={{fontSize:10,color:"#f59e0b",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>⚠️ Moras cobradas</div>
+                  <div style={{fontSize:20,fontWeight:900,color:"#f59e0b"}}>{fmt(morasMes)}</div>
+                  <div style={{fontSize:11,color:t.sub,marginTop:2}}>Extra por atrasos</div>
                 </div>
-              );
-            })()}
-            {/* META CLIENTES */}
-            {metaGuardada.clientes>0&&(()=>{
-              const actual=clients.length;
-              const pct=Math.min(100,Math.round((actual/metaGuardada.clientes)*100));
-              const falta=Math.max(0,metaGuardada.clientes-actual);
-              const color=pct>=100?"#10b981":pct>=50?"#8b5cf6":"#f59e0b";
-              return(
-                <div style={{background:t.bg,borderRadius:12,padding:"18px 20px"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
-                    <div>
-                      <div style={{fontSize:11,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Meta de clientes</div>
-                      <div style={{fontSize:20,fontWeight:900,color:t.text}}>{metaGuardada.clientes} clientes</div>
-                    </div>
-                    <div style={{width:48,height:48,borderRadius:"50%",background:`${color}20`,display:"flex",alignItems:"center",justifyContent:"center"}}>
-                      <div style={{fontSize:13,fontWeight:900,color}}>{pct}%</div>
-                    </div>
-                  </div>
-                  <div style={{marginBottom:10}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:5,fontSize:11}}>
-                      <span style={{color:t.sub}}>Actuales: <strong style={{color}}>{actual}</strong></span>
-                      <span style={{color:t.sub}}>Falta: <strong style={{color:"#ef4444"}}>{falta}</strong></span>
-                    </div>
-                    <div style={{height:12,borderRadius:6,background:t.border,overflow:"hidden"}}>
-                      <div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${color},${color}cc)`,borderRadius:6,transition:"width 0.7s"}}/>
-                    </div>
-                  </div>
-                  {pct>=100?(
-                    <div style={{fontSize:12,color:"#10b981",fontWeight:700,textAlign:"center"}}>🎉 ¡Meta cumplida!</div>
-                  ):(
-                    <div style={{fontSize:11,color:t.sub,textAlign:"center"}}>Te faltan <strong style={{color:t.text}}>{falta} cliente{falta!==1?"s":""}</strong> para llegar</div>
-                  )}
-                </div>
-              );
-            })()}
+              )}
+
+              <div style={{background:t.bg,borderRadius:12,padding:"14px 18px",border:`1px solid ${t.border}`}}>
+                <div style={{fontSize:10,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>👥 Clientes nuevos</div>
+                <div style={{fontSize:20,fontWeight:900,color:t.text}}>{clientesNuevosMes}</div>
+                <div style={{fontSize:11,color:t.sub,marginTop:2}}>Primera operación en el mes</div>
+              </div>
+            </div>
+
+            {recaudadoMes===0&&capitalColocado===0&&(
+              <div style={{textAlign:"center",padding:"14px 0 4px",color:t.sub,fontSize:12}}>Sin movimientos registrados en {MESES[mesSel]} {anioSel}</div>
+            )}
           </div>
-        )}
-      </div>
+        );
+      })()}
 
       {/* FLUJO DE EFECTIVO */}
       {creditos.length>0&&(

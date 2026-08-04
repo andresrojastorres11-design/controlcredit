@@ -919,7 +919,41 @@ const TablaCuotas=({credito,onActualizar,t})=>{
 };
 
 // ── PERFIL CLIENTE ────────────────────────────────────────────────────────────
-const PerfilCliente=({client,creditos,productos,setCreditos,onClose,onEdit,t})=>{
+const PerfilCliente=({client,creditos,productos,setCreditos,setClients,onClose,onEdit,t})=>{
+  // ── BITÁCORA DE NOTAS ──
+  // Las notas se guardan como JSON en el campo `notas`. Compatibilidad: si es texto plano viejo, lo tratamos como una nota inicial.
+  const parseNotas=(raw)=>{
+    if(!raw)return [];
+    try{const arr=JSON.parse(raw);return Array.isArray(arr)?arr:[{texto:raw,fecha:"",id:1}];}
+    catch{return [{texto:raw,fecha:"",id:1}];}
+  };
+  const [notasList,setNotasList]=React.useState(()=>parseNotas(client.notas));
+  const [nuevaNota,setNuevaNota]=React.useState("");
+  const [guardandoNota,setGuardandoNota]=React.useState(false);
+
+  const guardarNotas=async(lista)=>{
+    const json=JSON.stringify(lista);
+    setNotasList(lista);
+    try{
+      await sb.from("clientes").update({notas:json}).eq("id",client.id);
+      if(setClients)setClients(cs=>cs.map(c=>c.id===client.id?{...c,notas:json}:c));
+    }catch(e){}
+  };
+  const agregarNota=async()=>{
+    if(!nuevaNota.trim())return;
+    setGuardandoNota(true);
+    const ahora=new Date();
+    const fecha=ahora.toLocaleDateString("es-AR")+" "+ahora.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
+    const nueva={id:Date.now(),texto:nuevaNota.trim(),fecha};
+    await guardarNotas([nueva,...notasList]);
+    setNuevaNota("");
+    setGuardandoNota(false);
+  };
+  const borrarNota=async(id)=>{
+    if(!window.confirm("¿Borrar esta nota?"))return;
+    await guardarNotas(notasList.filter(n=>n.id!==id));
+  };
+
   const [expandidoCred,setExpandidoCred]=useState(null);
   const credC=creditos.filter(c=>c.clienteId===client.id);
   const prodC=productos.filter(p=>p.clienteId===client.id);
@@ -986,8 +1020,47 @@ const PerfilCliente=({client,creditos,productos,setCreditos,onClose,onEdit,t})=>
           <div style={{background:t.card,borderRadius:12,border:`1px solid ${t.border}`,padding:"16px 18px"}}>
             <h3 style={{margin:"0 0 10px",fontSize:13,fontWeight:700,color:t.text}}>💼 Trabajo</h3>
             {[["Ocupación",client.ocupacion],["Empresa",client.empresa],["Sueldo",client.sueldo?fmt(client.sueldo):null]].map(([k,v])=>v?(<div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${t.border}`}}><span style={{fontSize:11,color:t.sub}}>{k}</span><span style={{fontSize:11,fontWeight:600,color:t.text}}>{v}</span></div>):null)}
-            {client.notas&&<div style={{marginTop:10}}><div style={{fontSize:10,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Notas</div><div style={{fontSize:11,color:t.text,background:t.bg,borderRadius:7,padding:"8px 10px"}}>{client.notas}</div></div>}
           </div>
+        </div>
+
+        {/* ── BITÁCORA DE NOTAS ── */}
+        <div style={{background:t.card,borderRadius:12,border:`1px solid ${t.border}`,padding:"16px 18px",marginBottom:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <h3 style={{margin:0,fontSize:13,fontWeight:700,color:t.text}}>📝 Notas del cliente</h3>
+            {notasList.length>0&&<span style={{fontSize:11,color:t.sub,background:t.bg,borderRadius:20,padding:"2px 10px",fontWeight:600}}>{notasList.length} nota{notasList.length!==1?"s":""}</span>}
+          </div>
+
+          {/* Agregar nota */}
+          <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"flex-start"}}>
+            <textarea value={nuevaNota} onChange={e=>setNuevaNota(e.target.value)} rows={2}
+              placeholder="Ej: Va a pagar el 5, no está trabajando ahora..."
+              onKeyDown={e=>{if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){e.preventDefault();agregarNota();}}}
+              style={{flex:1,padding:"10px 12px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}}/>
+            <button onClick={agregarNota} disabled={!nuevaNota.trim()||guardandoNota}
+              style={{background:nuevaNota.trim()?t.accent:t.border,color:"#fff",border:"none",borderRadius:8,padding:"10px 16px",fontWeight:700,fontSize:13,cursor:nuevaNota.trim()?"pointer":"default",whiteSpace:"nowrap",alignSelf:"stretch"}}>
+              {guardandoNota?"...":"+ Agregar"}
+            </button>
+          </div>
+
+          {/* Lista de notas */}
+          {notasList.length===0?(
+            <div style={{textAlign:"center",padding:"20px 0",color:t.sub}}>
+              <div style={{fontSize:24,marginBottom:6}}>📋</div>
+              <div style={{fontSize:12}}>Sin notas todavía. Agregá recordatorios sobre este cliente.</div>
+            </div>
+          ):(
+            <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:280,overflowY:"auto"}}>
+              {notasList.map(n=>(
+                <div key={n.id} style={{background:t.bg,borderRadius:9,padding:"10px 12px",borderLeft:`3px solid ${t.accent}`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                    <div style={{fontSize:13,color:t.text,lineHeight:1.4,whiteSpace:"pre-wrap",flex:1}}>{n.texto}</div>
+                    <button onClick={()=>borrarNota(n.id)} style={{background:"none",border:"none",cursor:"pointer",color:t.sub,padding:2,flexShrink:0}}><Icon name="trash" size={13}/></button>
+                  </div>
+                  {n.fecha&&<div style={{fontSize:10,color:t.sub,marginTop:5,fontWeight:600}}>🕐 {n.fecha}</div>}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         {/* DOCUMENTOS DNI */}
         <div style={{background:t.card,borderRadius:12,border:`1px solid ${t.border}`,padding:"16px 18px",marginBottom:14}}>
@@ -2123,7 +2196,7 @@ Si no encontrás algún dato dejalo vacío. El DNI son solo los números sin pun
         <div style={{position:"fixed",inset:0,zIndex:500,display:"flex",alignItems:"stretch"}}>
           <div onClick={()=>setPerfil(null)} style={{flex:1,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(3px)",cursor:"pointer"}}/>
           <div style={{width:"min(680px,95vw)",background:t.bg,overflowY:"auto",boxShadow:"-8px 0 40px rgba(0,0,0,0.35)"}}>
-            <PerfilCliente client={perfil} creditos={creditos} productos={productos} setCreditos={setCreditos} onClose={()=>setPerfil(null)} onEdit={c=>{setSel(c);setForm({...EF,...c});setPerfil(null);setModal(true);}} t={t}/>
+            <PerfilCliente client={perfil} creditos={creditos} productos={productos} setCreditos={setCreditos} setClients={setClients} onClose={()=>setPerfil(null)} onEdit={c=>{setSel(c);setForm({...EF,...c});setPerfil(null);setModal(true);}} t={t}/>
           </div>
         </div>
       )}
@@ -2203,7 +2276,7 @@ Si no encontrás algún dato dejalo vacío. El DNI son solo los números sin pun
           <Field label="Estado civil" value={form.estadoCivil} onChange={v=>setForm(f=>({...f,estadoCivil:v}))} options={["Soltero/a","Casado/a","Divorciado/a","Viudo/a"]} t={t}/>
           <Field label="Estado" value={form.estado} onChange={v=>setForm(f=>({...f,estado:v}))} options={["Al día","Moroso","Atrasado","Premium","Restringido"]} t={t}/>
           <div style={{marginBottom:14}}><label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:4,textTransform:"uppercase"}}>Score ({form.score})</label><input type="range" min={0} max={100} value={form.score} onChange={e=>setForm(f=>({...f,score:+e.target.value}))} style={{width:"100%"}}/></div>
-          <div style={{gridColumn:"1/-1",marginBottom:14}}><label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:4,textTransform:"uppercase"}}>Notas internas</label><textarea value={form.notas} onChange={e=>setForm(f=>({...f,notas:e.target.value}))} rows={3} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box",resize:"vertical"}}/></div>
+          <div style={{gridColumn:"1/-1",marginBottom:14}}><div style={{background:t.bg,borderRadius:8,padding:"10px 12px",fontSize:11,color:t.sub}}>💡 Las notas del cliente se agregan desde su perfil, en la sección "📝 Notas del cliente".</div></div>
           <div style={{gridColumn:"1/-1"}}><Field label="Dirección del domicilio" value={form.direccion||""} onChange={v=>setForm(f=>({...f,direccion:v}))} t={t} placeholder="Ej: San Martín 1234, Piso 2"/></div>
           <div style={{gridColumn:"1/-1",marginBottom:14}}>
             <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:4,textTransform:"uppercase"}}>Link Google Maps (opcional)</label>

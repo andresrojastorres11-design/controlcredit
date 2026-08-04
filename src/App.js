@@ -69,7 +69,7 @@ const crearDetalleCuotasDesde=(primerPago,frecuencia,cantCuotas)=>{
 // Helpers para convertir entre snake_case (Supabase) y camelCase (App)
 const clientFromDB=(r)=>({id:r.id,nombre:r.nombre,apellido:r.apellido,dni:r.dni||"",email:r.email||"",tel:r.tel||"",ciudad:r.ciudad||"",provincia:r.provincia||"",estado:r.estado||"Al día",score:r.score||75,sueldo:r.sueldo||"",ocupacion:r.ocupacion||"",empresa:r.empresa||"",estadoCivil:r.estado_civil||"",nacimiento:r.nacimiento||"",notas:r.notas||"",usuarioId:r.usuario_id||0,dniFrenteUrl:r.dni_frente||"",dniDorsoUrl:r.dni_dorso||"",direccion:r.direccion||"",mapsLink:r.maps_link||""});
 const creditoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,monto:r.monto,totalCobrar:r.total_cobrar,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,valorCuota:r.valor_cuota,saldoCobrado:r.saldo_cobrado||0,saldoPendiente:r.saldo_pendiente,frecuencia:r.frecuencia,fechaOtorg:r.fecha_otorg,proximoPago:r.proximo_pago,estado:r.estado,comentarios:r.comentarios||"",historial:r.historial||[],detalleCuotas:r.detalle_cuotas||[],usuarioId:r.usuario_id||0,pagareUrl:r.pagare_url||""});
-const productoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,producto:r.producto,inversion:r.inversion,precioFinanciado:r.precio_financiado,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,saldoCobrado:r.saldo_cobrado||0,saldoPendiente:r.saldo_pendiente||r.precio_financiado||0,valorCuota:r.valor_cuota||Math.round((r.precio_financiado||0)/(r.cuotas||1)),estado:r.estado,frecuencia:r.frecuencia,usuarioId:r.usuario_id||0,detalleCuotas:r.detalle_cuotas||[],fechaOtorg:r.fecha_otorg||"",proximoPago:r.proximo_pago||"",entrega:r.entrega||0});
+const productoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.cliente_nombre,producto:r.producto,inversion:r.inversion,precioFinanciado:r.precio_financiado,ganancia:r.ganancia,cuotas:r.cuotas,cuotasPagadas:r.cuotas_pagadas||0,saldoCobrado:r.saldo_cobrado||0,saldoPendiente:r.saldo_pendiente||r.precio_financiado||0,valorCuota:r.valor_cuota||Math.round((r.precio_financiado||0)/(r.cuotas||1)),estado:r.estado,frecuencia:r.frecuencia,usuarioId:r.usuario_id||0,detalleCuotas:r.detalle_cuotas||[],fechaOtorg:r.fecha_otorg||"",proximoPago:r.proximo_pago||"",entrega:r.entrega||0,comentarios:r.comentarios||""});
 
 // ── PDF ENGINE ────────────────────────────────────────────────────────────────
 const abrirPDF=(html,nombre)=>{
@@ -920,40 +920,6 @@ const TablaCuotas=({credito,onActualizar,t})=>{
 
 // ── PERFIL CLIENTE ────────────────────────────────────────────────────────────
 const PerfilCliente=({client,creditos,productos,setCreditos,setClients,onClose,onEdit,t})=>{
-  // ── BITÁCORA DE NOTAS ──
-  // Las notas se guardan como JSON en el campo `notas`. Compatibilidad: si es texto plano viejo, lo tratamos como una nota inicial.
-  const parseNotas=(raw)=>{
-    if(!raw)return [];
-    try{const arr=JSON.parse(raw);return Array.isArray(arr)?arr:[{texto:raw,fecha:"",id:1}];}
-    catch{return [{texto:raw,fecha:"",id:1}];}
-  };
-  const [notasList,setNotasList]=React.useState(()=>parseNotas(client.notas));
-  const [nuevaNota,setNuevaNota]=React.useState("");
-  const [guardandoNota,setGuardandoNota]=React.useState(false);
-
-  const guardarNotas=async(lista)=>{
-    const json=JSON.stringify(lista);
-    setNotasList(lista);
-    try{
-      await sb.from("clientes").update({notas:json}).eq("id",client.id);
-      if(setClients)setClients(cs=>cs.map(c=>c.id===client.id?{...c,notas:json}:c));
-    }catch(e){}
-  };
-  const agregarNota=async()=>{
-    if(!nuevaNota.trim())return;
-    setGuardandoNota(true);
-    const ahora=new Date();
-    const fecha=ahora.toLocaleDateString("es-AR")+" "+ahora.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
-    const nueva={id:Date.now(),texto:nuevaNota.trim(),fecha};
-    await guardarNotas([nueva,...notasList]);
-    setNuevaNota("");
-    setGuardandoNota(false);
-  };
-  const borrarNota=async(id)=>{
-    if(!window.confirm("¿Borrar esta nota?"))return;
-    await guardarNotas(notasList.filter(n=>n.id!==id));
-  };
-
   const [expandidoCred,setExpandidoCred]=useState(null);
   const credC=creditos.filter(c=>c.clienteId===client.id);
   const prodC=productos.filter(p=>p.clienteId===client.id);
@@ -1021,46 +987,6 @@ const PerfilCliente=({client,creditos,productos,setCreditos,setClients,onClose,o
             <h3 style={{margin:"0 0 10px",fontSize:13,fontWeight:700,color:t.text}}>💼 Trabajo</h3>
             {[["Ocupación",client.ocupacion],["Empresa",client.empresa],["Sueldo",client.sueldo?fmt(client.sueldo):null]].map(([k,v])=>v?(<div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${t.border}`}}><span style={{fontSize:11,color:t.sub}}>{k}</span><span style={{fontSize:11,fontWeight:600,color:t.text}}>{v}</span></div>):null)}
           </div>
-        </div>
-
-        {/* ── BITÁCORA DE NOTAS ── */}
-        <div style={{background:t.card,borderRadius:12,border:`1px solid ${t.border}`,padding:"16px 18px",marginBottom:14}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-            <h3 style={{margin:0,fontSize:13,fontWeight:700,color:t.text}}>📝 Notas del cliente</h3>
-            {notasList.length>0&&<span style={{fontSize:11,color:t.sub,background:t.bg,borderRadius:20,padding:"2px 10px",fontWeight:600}}>{notasList.length} nota{notasList.length!==1?"s":""}</span>}
-          </div>
-
-          {/* Agregar nota */}
-          <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"flex-start"}}>
-            <textarea value={nuevaNota} onChange={e=>setNuevaNota(e.target.value)} rows={2}
-              placeholder="Ej: Va a pagar el 5, no está trabajando ahora..."
-              onKeyDown={e=>{if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){e.preventDefault();agregarNota();}}}
-              style={{flex:1,padding:"10px 12px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}}/>
-            <button onClick={agregarNota} disabled={!nuevaNota.trim()||guardandoNota}
-              style={{background:nuevaNota.trim()?t.accent:t.border,color:"#fff",border:"none",borderRadius:8,padding:"10px 16px",fontWeight:700,fontSize:13,cursor:nuevaNota.trim()?"pointer":"default",whiteSpace:"nowrap",alignSelf:"stretch"}}>
-              {guardandoNota?"...":"+ Agregar"}
-            </button>
-          </div>
-
-          {/* Lista de notas */}
-          {notasList.length===0?(
-            <div style={{textAlign:"center",padding:"20px 0",color:t.sub}}>
-              <div style={{fontSize:24,marginBottom:6}}>📋</div>
-              <div style={{fontSize:12}}>Sin notas todavía. Agregá recordatorios sobre este cliente.</div>
-            </div>
-          ):(
-            <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:280,overflowY:"auto"}}>
-              {notasList.map(n=>(
-                <div key={n.id} style={{background:t.bg,borderRadius:9,padding:"10px 12px",borderLeft:`3px solid ${t.accent}`}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
-                    <div style={{fontSize:13,color:t.text,lineHeight:1.4,whiteSpace:"pre-wrap",flex:1}}>{n.texto}</div>
-                    <button onClick={()=>borrarNota(n.id)} style={{background:"none",border:"none",cursor:"pointer",color:t.sub,padding:2,flexShrink:0}}><Icon name="trash" size={13}/></button>
-                  </div>
-                  {n.fecha&&<div style={{fontSize:10,color:t.sub,marginTop:5,fontWeight:600}}>🕐 {n.fecha}</div>}
-                </div>
-              ))}
-            </div>
-          )}
         </div>
         {/* DOCUMENTOS DNI */}
         <div style={{background:t.card,borderRadius:12,border:`1px solid ${t.border}`,padding:"16px 18px",marginBottom:14}}>
@@ -2276,7 +2202,7 @@ Si no encontrás algún dato dejalo vacío. El DNI son solo los números sin pun
           <Field label="Estado civil" value={form.estadoCivil} onChange={v=>setForm(f=>({...f,estadoCivil:v}))} options={["Soltero/a","Casado/a","Divorciado/a","Viudo/a"]} t={t}/>
           <Field label="Estado" value={form.estado} onChange={v=>setForm(f=>({...f,estado:v}))} options={["Al día","Moroso","Atrasado","Premium","Restringido"]} t={t}/>
           <div style={{marginBottom:14}}><label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:4,textTransform:"uppercase"}}>Score ({form.score})</label><input type="range" min={0} max={100} value={form.score} onChange={e=>setForm(f=>({...f,score:+e.target.value}))} style={{width:"100%"}}/></div>
-          <div style={{gridColumn:"1/-1",marginBottom:14}}><div style={{background:t.bg,borderRadius:8,padding:"10px 12px",fontSize:11,color:t.sub}}>💡 Las notas del cliente se agregan desde su perfil, en la sección "📝 Notas del cliente".</div></div>
+          <div style={{gridColumn:"1/-1",marginBottom:14}}><label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:4,textTransform:"uppercase"}}>Notas internas</label><textarea value={form.notas} onChange={e=>setForm(f=>({...f,notas:e.target.value}))} rows={3} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box",resize:"vertical"}}/></div>
           <div style={{gridColumn:"1/-1"}}><Field label="Dirección del domicilio" value={form.direccion||""} onChange={v=>setForm(f=>({...f,direccion:v}))} t={t} placeholder="Ej: San Martín 1234, Piso 2"/></div>
           <div style={{gridColumn:"1/-1",marginBottom:14}}>
             <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:4,textTransform:"uppercase"}}>Link Google Maps (opcional)</label>
@@ -2378,6 +2304,88 @@ const ResumenClienteSel=({clienteId,creditos=[],productos=[],t})=>{
   );
 };
 
+// ── NOTAS RÁPIDAS DE UN CRÉDITO/VENTA ─────────────────────────────────────────
+// Guarda una bitácora con fecha en el campo `comentarios` (JSON). Sirve para
+// anotar "va a pagar el 5, no está trabajando", etc. Se usa en Créditos y en Pagos.
+const parseNotasOp=(raw)=>{
+  if(!raw)return [];
+  try{const arr=JSON.parse(raw);return Array.isArray(arr)?arr:(raw.trim()?[{id:1,texto:raw,fecha:""}]:[]);}
+  catch{return raw.trim()?[{id:1,texto:raw,fecha:""}]:[];}
+};
+
+const ModalNotas=({open,onClose,item,tabla,onSaved,t})=>{
+  const [lista,setLista]=React.useState([]);
+  const [nueva,setNueva]=React.useState("");
+  const [saving,setSaving]=React.useState(false);
+  React.useEffect(()=>{if(open&&item)setLista(parseNotasOp(item.comentarios));},[open,item]);
+  if(!open||!item)return null;
+
+  const persistir=async(nuevaLista)=>{
+    const json=JSON.stringify(nuevaLista);
+    setLista(nuevaLista);
+    try{
+      await sb.from(tabla).update({comentarios:json}).eq("id",item.id);
+      if(onSaved)onSaved(item.id,json);
+    }catch(e){}
+  };
+  const agregar=async()=>{
+    if(!nueva.trim())return;
+    setSaving(true);
+    const ahora=new Date();
+    const fecha=ahora.toLocaleDateString("es-AR")+" "+ahora.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
+    await persistir([{id:Date.now(),texto:nueva.trim(),fecha},...lista]);
+    setNueva("");setSaving(false);
+  };
+  const borrar=async(id)=>{
+    if(!window.confirm("¿Borrar esta nota?"))return;
+    await persistir(lista.filter(n=>n.id!==id));
+  };
+
+  return(
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+      <div onClick={e=>e.stopPropagation()} className="cc-modal" style={{background:t.card,borderRadius:16,padding:"22px 24px",width:"94%",maxWidth:480,maxHeight:"85vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(0,0,0,0.35)",border:`1px solid ${t.border}`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+          <div>
+            <h3 style={{margin:"0 0 2px",fontSize:16,fontWeight:800,color:t.text}}>📝 Notas</h3>
+            <p style={{margin:0,fontSize:12,color:t.sub}}>{item.clienteNombre}{item.producto?` · ${item.producto}`:""}</p>
+          </div>
+          <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:t.sub,padding:4}}><Icon name="close" size={18}/></button>
+        </div>
+
+        <div style={{display:"flex",gap:8,margin:"14px 0",alignItems:"stretch"}}>
+          <textarea value={nueva} onChange={e=>setNueva(e.target.value)} rows={2} autoFocus
+            placeholder="Ej: Va a pagar el 5, no está trabajando..."
+            onKeyDown={e=>{if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){e.preventDefault();agregar();}}}
+            style={{flex:1,padding:"10px 12px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}}/>
+          <button onClick={agregar} disabled={!nueva.trim()||saving}
+            style={{background:nueva.trim()?t.accent:t.border,color:"#fff",border:"none",borderRadius:8,padding:"0 16px",fontWeight:700,fontSize:13,cursor:nueva.trim()?"pointer":"default",whiteSpace:"nowrap"}}>
+            {saving?"...":"+ Agregar"}
+          </button>
+        </div>
+
+        {lista.length===0?(
+          <div style={{textAlign:"center",padding:"24px 0",color:t.sub}}>
+            <div style={{fontSize:26,marginBottom:6}}>📋</div>
+            <div style={{fontSize:12}}>Sin notas todavía</div>
+          </div>
+        ):(
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {lista.map(n=>(
+              <div key={n.id} style={{background:t.bg,borderRadius:9,padding:"10px 12px",borderLeft:`3px solid ${t.accent}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                  <div style={{fontSize:13,color:t.text,lineHeight:1.4,whiteSpace:"pre-wrap",flex:1}}>{n.texto}</div>
+                  <button onClick={()=>borrar(n.id)} style={{background:"none",border:"none",cursor:"pointer",color:t.sub,padding:2,flexShrink:0}}><Icon name="trash" size={13}/></button>
+                </div>
+                {n.fecha&&<div style={{fontSize:10,color:t.sub,marginTop:5,fontWeight:600}}>🕐 {n.fecha}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const Creditos=({creditos,setCreditos,clients,productos=[],usuarioActual,soloVer=false,t})=>{
   const [search,setSearch]=useState("");
   const [filtroEst,setFiltroEst]=useState("Todos");
@@ -2385,6 +2393,7 @@ const Creditos=({creditos,setCreditos,clients,productos=[],usuarioActual,soloVer
   const [editModal,setEditModal]=useState(false);
   const [creditoEditando,setCreditoEditando]=useState(null);
   const [expandido,setExpandido]=useState(null);
+  const [notasItem,setNotasItem]=useState(null);
   const [loading,setLoading]=useState(false);
   const EF={clienteId:"",monto:"",totalCobrar:"",cuotas:"",frecuencia:"Mensual",fechaOtorg:new Date().toISOString().slice(0,10),primerPago:"",estado:"Al día",comentarios:""};
   const [form,setForm]=useState(EF);
@@ -2510,6 +2519,9 @@ const Creditos=({creditos,setCreditos,clients,productos=[],usuarioActual,soloVer
                     </div>
                     <div style={{display:"flex",gap:7,flexWrap:"wrap",alignItems:"center"}}>
                       <button onClick={()=>setExpandido(exp?null:c.id)} style={{background:exp?t.accent:"none",border:`1px solid ${t.accent}`,color:exp?"#fff":t.accent,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><Icon name="calendar" size={13}/>{exp?"Ocultar":"Ver cuotas"}</button>
+                      {(()=>{const nN=parseNotasOp(c.comentarios).length;return(
+                        <button onClick={()=>setNotasItem(c)} style={{background:nN>0?"#f59e0b":"none",border:`1px solid ${nN>0?"#f59e0b":t.border}`,color:nN>0?"#fff":t.sub,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5}} title="Notas del cliente">📝 Notas{nN>0&&<span style={{background:"#fff",color:"#f59e0b",borderRadius:20,padding:"0 6px",fontSize:10,fontWeight:800}}>{nN}</span>}</button>
+                      );})()}
                       {!soloVer&&<button onClick={()=>abrirEdicion(c)} style={{background:"none",border:`1px solid ${t.border}`,color:t.sub,borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:3}} title="Editar crédito"><Icon name="edit" size={13}/></button>}
                       <button onClick={()=>generatePDF(c)} style={{background:"none",border:`1px solid ${t.border}`,color:t.sub,borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}><Icon name="pdf" size={13}/></button>
                       {!soloVer&&<UploadBtn label={c.pagareUrl?"📄 Pagaré ✓":"📄 Pagaré"} url={c.pagareUrl} accept="image/*,.pdf" color={c.pagareUrl?"#10b981":"#f59e0b"} t={t} onUpload={async(url)=>{await sb.from("creditos").update({pagare_url:url}).eq("id",c.id);setCreditos(cs=>cs.map(x=>x.id===c.id?{...x,pagareUrl:url}:x));}}/>}
@@ -2543,6 +2555,8 @@ const Creditos=({creditos,setCreditos,clients,productos=[],usuarioActual,soloVer
           })}
         </div>
       )}
+      <ModalNotas open={!!notasItem} onClose={()=>setNotasItem(null)} item={notasItem} tabla="creditos" onSaved={(id,json)=>setCreditos(cs=>cs.map(x=>x.id===id?{...x,comentarios:json}:x))} t={t}/>
+
       <Modal open={modal} onClose={()=>setModal(false)} title="Nuevo crédito" t={t}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
           <div style={{gridColumn:"1/-1"}}><ClienteBuscador clients={clients} t={t} onSelect={c=>setForm(f=>({...f,clienteId:c?c.id:""}))}/></div>
@@ -2620,6 +2634,7 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
   const [productoEditando,setProductoEditando]=useState(null);
   const [tabActiva,setTabActiva]=useState("financiado");
   const [expandido,setExpandido]=useState(null);
+  const [notasItem,setNotasItem]=useState(null);
   const [loading,setLoading]=useState(false);
   const [searchProd,setSearchProd]=useState("");
   const [filtroEstProd,setFiltroEstProd]=useState("Todos");
@@ -2766,6 +2781,9 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
                       </div>
                       <div style={{display:"flex",gap:7,flexWrap:"wrap",alignItems:"center"}}>
                         <button onClick={()=>setExpandido(exp?null:p.id)} style={{background:exp?t.accent:"none",border:`1px solid ${t.accent}`,color:exp?"#fff":t.accent,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><Icon name="calendar" size={13}/>{exp?"Ocultar":"Ver cuotas"}</button>
+                        {(()=>{const nN=parseNotasOp(p.comentarios).length;return(
+                          <button onClick={()=>setNotasItem(p)} style={{background:nN>0?"#f59e0b":"none",border:`1px solid ${nN>0?"#f59e0b":t.border}`,color:nN>0?"#fff":t.sub,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5}} title="Notas del cliente">📝 Notas{nN>0&&<span style={{background:"#fff",color:"#f59e0b",borderRadius:20,padding:"0 6px",fontSize:10,fontWeight:800}}>{nN}</span>}</button>
+                        );})()}
                         <button onClick={()=>abrirEdicion(p)} style={{background:"none",border:`1px solid ${t.border}`,color:t.sub,borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:3}} title="Editar"><Icon name="edit" size={13}/></button>
                         <button onClick={()=>generatePDF({...p,clienteNombre:p.clienteNombre,monto:p.inversion,totalCobrar:p.precioFinanciado,valorCuota:p.valorCuota,saldoCobrado:p.saldoCobrado,saldoPendiente:p.saldoPendiente,cuotasPagadas:p.cuotasPagadas,cuotas:p.cuotas,fechaOtorg:p.fechaOtorg,proximoPago:p.proximoPago,frecuencia:p.frecuencia,estado:p.estado,detalleCuotas:p.detalleCuotas||[]})} style={{background:"none",border:`1px solid ${t.border}`,color:t.sub,borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}><Icon name="pdf" size={13}/></button>
                         <button onClick={()=>del(p.id)} style={{background:"none",border:"1px solid #fca5a5",color:"#ef4444",borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center"}}><Icon name="trash" size={13}/></button>
@@ -2839,6 +2857,8 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
       )}
 
       {/* MODAL NUEVA VENTA FINANCIADA */}
+      <ModalNotas open={!!notasItem} onClose={()=>setNotasItem(null)} item={notasItem} tabla="productos" onSaved={(id,json)=>setProductos(ps=>ps.map(x=>x.id===id?{...x,comentarios:json}:x))} t={t}/>
+
       <Modal open={modal} onClose={()=>setModal(false)} title="Nueva venta financiada" t={t}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
           <div style={{gridColumn:"1/-1"}}><ClienteBuscador clients={clients} t={t} onSelect={c=>setForm(f=>({...f,clienteId:c?c.id:""}))}/></div>
@@ -3176,10 +3196,11 @@ const Papelera=({setCreditos,setProductos,t})=>{
 // ── APP ROOT ──────────────────────────────────────────────────────────────────
 // ── APP ROOT ──────────────────────────────────────────────────────────────────
 // ── TARJETA COBRO MÓVIL ───────────────────────────────────────────────────────
-const TarjetaCobro=({c,colorBorde,clients,t,onCobrar})=>{
+const TarjetaCobro=({c,colorBorde,clients,t,onCobrar,onNotas})=>{
   const clienteInfo=clients.find(cl=>cl.id===c.clienteId);
   const diffLabel=c.diff===0?"HOY":c.diff===-1?"Ayer":c.diff>0?`En ${c.diff}d`:`Hace ${Math.abs(c.diff)}d`;
   const colDiff=c.diff===0?"#10b981":c.diff>0?"#3b82f6":"#ef4444";
+  const nNotas=parseNotasOp(c.comentarios).length;
   return(
     <div style={{background:t.card,borderRadius:14,border:`2px solid ${colorBorde}`,padding:"14px 16px",marginBottom:10}}>
       <div style={{marginBottom:10}}>
@@ -3194,11 +3215,22 @@ const TarjetaCobro=({c,colorBorde,clients,t,onCobrar})=>{
           <span style={{fontSize:12,fontWeight:700,color:colDiff,background:`${colDiff}15`,padding:"2px 8px",borderRadius:20}}>{diffLabel}</span>
           <span style={{fontSize:11,color:t.sub}}>{c.cuotasPagadas}/{c.cuotas} cuotas</span>
         </div>
+        {/* Última nota visible en la tarjeta */}
+        {nNotas>0&&(()=>{const ult=parseNotasOp(c.comentarios)[0];return(
+          <div style={{marginTop:8,background:"#f59e0b12",borderLeft:"3px solid #f59e0b",borderRadius:6,padding:"7px 10px"}}>
+            <div style={{fontSize:12,color:t.text,lineHeight:1.3}}>📝 {ult.texto}</div>
+            {ult.fecha&&<div style={{fontSize:9,color:t.sub,marginTop:2}}>{ult.fecha}{nNotas>1?` · +${nNotas-1} más`:""}</div>}
+          </div>
+        );})()}
       </div>
       <div style={{display:"flex",gap:8}}>
         <button onClick={()=>onCobrar(c)}
           style={{flex:1,background:"#10b981",color:"#fff",border:"none",borderRadius:10,padding:"12px",fontWeight:800,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
           ✓ Cobrado
+        </button>
+        <button onClick={()=>onNotas(c)}
+          style={{background:nNotas>0?"#f59e0b":t.bg,color:nNotas>0?"#fff":t.sub,border:`1px solid ${nNotas>0?"#f59e0b":t.border}`,borderRadius:10,padding:"12px 14px",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
+          📝{nNotas>0&&<span style={{background:"#fff",color:"#f59e0b",borderRadius:20,padding:"0 5px",fontSize:10,fontWeight:800}}>{nNotas}</span>}
         </button>
         {clienteInfo?.tel&&(
           <a href={`https://wa.me/54${clienteInfo.tel.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${clienteInfo.nombre}, te escribo por el pago de hoy.`)}`}
@@ -3218,6 +3250,7 @@ export default function App(){
   const [fabOpen,setFabOpen]=useState(false);
   const [fabModal,setFabModal]=useState(null);
   const [filtroCobros,setFiltroCobros]=useState("todos"); // todos|vencidos|hoy|proximos
+  const [notasCobro,setNotasCobro]=useState(null); // ítem cuyas notas se están viendo en Cobros del día
   const [mostrarBienvenida,setMostrarBienvenida]=useState(false);
   const [allClients,setAllClients]=useState([]);
   const [allCreditos,setAllCreditos]=useState([]);
@@ -3661,7 +3694,7 @@ export default function App(){
                     <span style={{width:8,height:8,borderRadius:"50%",background:"#ef4444",display:"inline-block"}}/>
                     VENCIDOS — {cobrosVencidos.length}
                   </div>
-                  {cobrosVencidos.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} clients={clients} t={t} onCobrar={marcarCobradoMob} colorBorde="#ef4444"/>)}
+                  {cobrosVencidos.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} clients={clients} t={t} onCobrar={marcarCobradoMob} onNotas={setNotasCobro} colorBorde="#ef4444"/>)}
                 </div>
               )}
 
@@ -3671,7 +3704,7 @@ export default function App(){
                     <span style={{width:8,height:8,borderRadius:"50%",background:"#10b981",display:"inline-block"}}/>
                     VENCEN HOY — {cobrosHoy.length}
                   </div>
-                  {cobrosHoy.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} clients={clients} t={t} onCobrar={marcarCobradoMob} colorBorde="#10b981"/>)}
+                  {cobrosHoy.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} clients={clients} t={t} onCobrar={marcarCobradoMob} onNotas={setNotasCobro} colorBorde="#10b981"/>)}
                 </div>
               )}
 
@@ -3681,7 +3714,7 @@ export default function App(){
                     <span style={{width:8,height:8,borderRadius:"50%",background:"#3b82f6",display:"inline-block"}}/>
                     PRÓXIMOS (1-3 DÍAS) — {cobrosMañana.length}
                   </div>
-                  {cobrosMañana.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} clients={clients} t={t} onCobrar={marcarCobradoMob} colorBorde="#3b82f6"/>)}
+                  {cobrosMañana.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} clients={clients} t={t} onCobrar={marcarCobradoMob} onNotas={setNotasCobro} colorBorde="#3b82f6"/>)}
                 </div>
               )}
 
@@ -3791,6 +3824,13 @@ export default function App(){
             </div>
           </>
         )}
+
+        {/* Modal de notas desde Cobros del día */}
+        <ModalNotas open={!!notasCobro} onClose={()=>setNotasCobro(null)} item={notasCobro} tabla={notasCobro?._tipo==="producto"?"productos":"creditos"}
+          onSaved={(id,json)=>{
+            if(notasCobro?._tipo==="producto")setProductos(ps=>ps.map(x=>x.id===id?{...x,comentarios:json}:x));
+            else setCreditos(cs=>cs.map(x=>x.id===id?{...x,comentarios:json}:x));
+          }} t={t}/>
 
         <style>{`
           @keyframes fadeSlideUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}

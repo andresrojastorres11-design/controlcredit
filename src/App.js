@@ -2025,18 +2025,41 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
         );
       })()}
 
-      {(creditos.length>0||clients.length>0)&&<div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:18,marginBottom:18}}>
-        <div style={{background:t.card,borderRadius:14,padding:"20px 22px",border:`1px solid ${t.border}`}}>
-          <h3 style={{margin:"0 0 16px",fontSize:15,fontWeight:700,color:t.text}}>Evolución mensual</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={EVOL}><defs><linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={t.border}/><XAxis dataKey="mes" tick={{fill:t.sub,fontSize:12}}/><YAxis tick={{fill:t.sub,fontSize:11}} tickFormatter={v=>`$${(v/1000).toFixed(0)}k`}/><Tooltip formatter={v=>fmt(v)} contentStyle={{background:t.card,border:`1px solid ${t.border}`,borderRadius:8,color:t.text}}/><Area type="monotone" dataKey="cobros" stroke="#3b82f6" fill="url(#g1)" name="Cobros"/></AreaChart>
-          </ResponsiveContainer>
+      {(creditos.length>0||clients.length>0)&&(()=>{
+        // ── EVOLUCIÓN MENSUAL REAL (últimos 6 meses) ──
+        const hoyEv=new Date();
+        const fpISOev=(fp)=>{if(!fp)return null;const p=fp.split("/");if(p.length<3)return null;return `${p[2]}-${p[1].padStart(2,"0")}-${p[0].padStart(2,"0")}`;};
+        const nombresM=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+        const evolData=Array.from({length:6},(_,i)=>{
+          const d=new Date(hoyEv.getFullYear(),hoyEv.getMonth()-(5-i),1);
+          const desde=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`;
+          const hasta=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${new Date(d.getFullYear(),d.getMonth()+1,0).getDate()}`;
+          let cobros=0;
+          creditos.forEach(c=>{
+            (c.detalleCuotas||[]).forEach(dc=>{
+              const fp=fpISOev(dc.fechaPago);
+              if(dc.estado==="Pagada"&&fp&&fp>=desde&&fp<=hasta)cobros+=dc.montoPagado||0;
+            });
+          });
+          productos.forEach(p=>{
+            (p.detalleCuotas||[]).forEach(dc=>{
+              const fp=fpISOev(dc.fechaPago);
+              if(dc.estado==="Pagada"&&fp&&fp>=desde&&fp<=hasta)cobros+=dc.montoPagado||0;
+            });
+          });
+          return{mes:nombresM[d.getMonth()],cobros};
+        });
+        return(
+        <div style={{marginBottom:18}}>
+          <div style={{background:t.card,borderRadius:14,padding:"20px 22px",border:`1px solid ${t.border}`}}>
+            <h3 style={{margin:"0 0 16px",fontSize:15,fontWeight:700,color:t.text}}>Evolución mensual — cobros</h3>
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={evolData}><defs><linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={t.border}/><XAxis dataKey="mes" tick={{fill:t.sub,fontSize:12}}/><YAxis tick={{fill:t.sub,fontSize:11}} tickFormatter={v=>`$${(v/1000).toFixed(0)}k`}/><Tooltip formatter={v=>fmt(v)} contentStyle={{background:t.card,border:`1px solid ${t.border}`,borderRadius:8,color:t.text}}/><Area type="monotone" dataKey="cobros" stroke="#3b82f6" fill="url(#g1)" name="Cobros"/></AreaChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-        <div style={{background:t.card,borderRadius:14,padding:"20px 22px",border:`1px solid ${t.border}`}}>
-          <h3 style={{margin:"0 0 16px",fontSize:15,fontWeight:700,color:t.text}}>Clientes</h3>
-          {pie.length>0?<ResponsiveContainer width="100%" height={190}><PieChart><Pie data={pie} cx="50%" cy="50%" innerRadius={50} outerRadius={75} paddingAngle={3} dataKey="value">{pie.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip contentStyle={{background:t.card,border:`1px solid ${t.border}`,borderRadius:8,color:t.text}}/><Legend formatter={v=><span style={{color:t.sub,fontSize:12}}>{v}</span>}/></PieChart></ResponsiveContainer>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:190,color:t.sub,fontSize:13}}>Sin datos aún</div>}
-        </div>
-      </div>}
+        );
+      })()}
     </div>
   );
 };

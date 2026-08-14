@@ -91,7 +91,7 @@ const generatePDF=(credito)=>{
       <td style="font-weight:700">${d.num}</td>
       <td>${fmtFecha(d.fechaVenc)}</td>
       <td>${fechaPagoCol}</td>
-      <td>${fmt(vc)}${d.valorCuotaEditado&&d.valorCuotaEditado!==credito.valorCuota?'<span style="font-size:9px;color:#f59e0b;margin-left:3px">+mora</span>':''}</td>
+      <td>${fmt(vc)}${d.valorCuotaEditado&&d.valorCuotaEditado!==credito.valorCuota?(d.valorCuotaEditado>credito.valorCuota?'<span style="font-size:9px;color:#f59e0b;margin-left:3px">+mora</span>':'<span style="font-size:9px;color:#8b5cf6;margin-left:3px">desc.</span>'):''}</td>
       <td style="color:#10b981;font-weight:600">${fmt(d.montoPagado)}</td>
       <td style="color:#ef4444;font-weight:600">${fmt(saldoCuota)}</td>
       <td><span class="badge ${badgeClass}">${d.estado}</span></td>
@@ -298,7 +298,7 @@ const generatePDFCliente=(cliente,creditos,productos)=>{
       const vc=d.valorCuotaEditado||c.valorCuota;
       const saldo=Math.max(0,vc-d.montoPagado);
       const badgeClass=d.estado==="Pagada"?"badge-verde":d.estado==="Parcial"?"badge-amarillo":"badge-rojo";
-      return`<tr><td>${d.num}</td><td>${fmtFecha(d.fechaVenc)}</td><td>${fmt(vc)}${d.valorCuotaEditado&&d.valorCuotaEditado!==c.valorCuota?' <span class="badge badge-amarillo">+mora</span>':''}</td><td style="color:#10b981">${fmt(d.montoPagado)}</td><td style="color:#ef4444">${fmt(saldo)}</td><td><span class="badge ${badgeClass}">${d.estado}</span></td></tr>`;
+      return`<tr><td>${d.num}</td><td>${fmtFecha(d.fechaVenc)}</td><td>${fmt(vc)}${d.valorCuotaEditado&&d.valorCuotaEditado!==c.valorCuota?(d.valorCuotaEditado>c.valorCuota?' <span class="badge badge-amarillo">+mora</span>':' <span class="badge" style="background:#ede9fe;color:#8b5cf6">desc.</span>'):''}</td><td style="color:#10b981">${fmt(d.montoPagado)}</td><td style="color:#ef4444">${fmt(saldo)}</td><td><span class="badge ${badgeClass}">${d.estado}</span></td></tr>`;
     }).join("");
     return`<div class="seccion" style="margin-bottom:12px">
       <div class="seccion-titulo">Crédito otorgado ${fmtFecha(c.fechaOtorg)} — ${c.frecuencia} — ${c.estado}</div>
@@ -794,9 +794,11 @@ const TablaCuotas=({credito,onActualizar,t})=>{
                       </div>
                     ):(
                       <div style={{display:"flex",alignItems:"center",gap:4}}>
-                        <span style={{color:tieneEdicion?"#f59e0b":t.text,fontWeight:tieneEdicion?700:600}}>{fmt(valorReal)}</span>
-                        {tieneEdicion&&<span style={{fontSize:9,color:"#f59e0b",fontWeight:700,background:"#fef3c7",padding:"1px 5px",borderRadius:4}}>+mora</span>}
-                        <button onClick={()=>abrirEditValor(i)} style={{background:"none",border:"none",cursor:"pointer",color:"#f59e0b",padding:2,display:"flex",alignItems:"center"}} title="Editar valor por mora/interés"><Icon name="edit" size={11}/></button>
+                        <span style={{color:tieneEdicion?(valorReal>credito.valorCuota?"#f59e0b":"#8b5cf6"):t.text,fontWeight:tieneEdicion?700:600}}>{fmt(valorReal)}</span>
+                        {tieneEdicion&&(valorReal>credito.valorCuota
+                          ?<span style={{fontSize:9,color:"#f59e0b",fontWeight:700,background:"#fef3c7",padding:"1px 5px",borderRadius:4}}>+mora</span>
+                          :<span style={{fontSize:9,color:"#8b5cf6",fontWeight:700,background:"#ede9fe",padding:"1px 5px",borderRadius:4}}>desc.</span>)}
+                        <button onClick={()=>abrirEditValor(i)} style={{background:"none",border:"none",cursor:"pointer",color:tieneEdicion&&valorReal<credito.valorCuota?"#8b5cf6":"#f59e0b",padding:2,display:"flex",alignItems:"center"}} title="Editar valor por mora/descuento"><Icon name="edit" size={11}/></button>
                       </div>
                     )}
                   </td>
@@ -910,9 +912,10 @@ const TablaCuotas=({credito,onActualizar,t})=>{
           </tbody>
         </table>
       </div>
-      <div style={{display:"flex",gap:16,marginTop:8,fontSize:11,color:t.sub}}>
+      <div style={{display:"flex",gap:16,marginTop:8,fontSize:11,color:t.sub,flexWrap:"wrap"}}>
         <span>🟢 Pagada</span><span>🟡 Parcial</span><span>⚫ Pendiente</span>
-        <span style={{color:"#f59e0b"}}>🟠 $+ = editar valor por mora</span>
+        <span style={{color:"#f59e0b"}}>🟠 $+ = editar valor (mora sube / descuento baja)</span>
+        <span style={{color:"#8b5cf6"}}>🎁 Desc. = pago anticipado con descuento</span>
       </div>
     </div>
   );
@@ -1894,7 +1897,7 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
                                   <tr key={i} style={{borderTop:`1px solid ${t.border}`,background:estaVencida?"#fee2e215":"transparent"}}>
                                     <td style={{padding:"7px 10px",fontWeight:700,color:t.text}}>{d.num}</td>
                                     <td style={{padding:"7px 10px",color:estaVencida?"#ef4444":t.text,fontWeight:estaVencida?700:400}}>{fmtFecha(d.fechaVenc)}{estaVencida&&<span style={{fontSize:9,marginLeft:4,color:"#ef4444",fontWeight:700}}>VENCIDA</span>}</td>
-                                    <td style={{padding:"7px 10px",color:t.text}}>{fmt(vc)}{d.valorCuotaEditado&&d.valorCuotaEditado!==c.valorCuota&&<span style={{fontSize:9,color:"#f59e0b",marginLeft:3}}>+mora</span>}</td>
+                                    <td style={{padding:"7px 10px",color:t.text}}>{fmt(vc)}{d.valorCuotaEditado&&d.valorCuotaEditado!==c.valorCuota&&(d.valorCuotaEditado>c.valorCuota?<span style={{fontSize:9,color:"#f59e0b",marginLeft:3}}>+mora</span>:<span style={{fontSize:9,color:"#8b5cf6",marginLeft:3}}>desc.</span>)}</td>
                                     <td style={{padding:"7px 10px",color:d.montoPagado>0?"#10b981":t.sub,fontWeight:d.montoPagado>0?700:400}}>{fmt(d.montoPagado)}</td>
                                     <td style={{padding:"7px 10px",color:saldo>0?"#ef4444":"#10b981",fontWeight:700}}>{fmt(saldo)}</td>
                                     <td style={{padding:"7px 10px"}}><span style={{color:colEst,fontWeight:600,fontSize:11}}>{d.estado}</span>{d.fechaPago&&<div style={{fontSize:9,color:t.sub}}>{d.fechaPago}</div>}</td>

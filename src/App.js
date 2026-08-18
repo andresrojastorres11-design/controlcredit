@@ -2976,6 +2976,146 @@ const Productos=({productos,setProductos,ventasContado,setVentasContado,clients,
 };
 
 
+// ── HISTORIAL DE TRANSACCIONES ────────────────────────────────────────────────
+const Historial=({creditos,productos,ventasContado=[],clients,t})=>{
+  const hoy=new Date();
+  const [fechaSel,setFechaSel]=useState(hoy.toISOString().slice(0,10));
+  const [tipoFiltro,setTipoFiltro]=useState("todos"); // todos|otorgados|cobros
+
+  const fpISO=(fp)=>{if(!fp)return null;const p=fp.split("/");if(p.length<3)return null;return `${p[2]}-${p[1].padStart(2,"0")}-${p[0].padStart(2,"0")}`;};
+  const nombreCli=(id)=>{const c=clients.find(x=>x.id===id);return c?`${c.nombre} ${c.apellido}`:"—";};
+
+  // ── Recolectar TODAS las transacciones del día seleccionado ──
+  const transacciones=[];
+
+  // Créditos otorgados ese día
+  creditos.forEach(c=>{
+    if(c.fechaOtorg===fechaSel){
+      transacciones.push({tipo:"credito_otorgado",cliente:c.clienteNombre,monto:c.monto,detalle:`Crédito otorgado · ${c.cuotas} cuotas ${c.frecuencia?.toLowerCase()}`,color:"#3b82f6",icon:"💳",signo:"-"});
+    }
+    // Cobros de cuotas ese día
+    (c.detalleCuotas||[]).forEach(d=>{
+      if(d.estado==="Pagada"&&fpISO(d.fechaPago)===fechaSel){
+        transacciones.push({tipo:"cobro_credito",cliente:c.clienteNombre,monto:d.montoPagado,detalle:`Cobro cuota ${d.num} de crédito`,color:"#10b981",icon:"💵",signo:"+"});
+      }
+    });
+  });
+
+  // Ventas financiadas otorgadas ese día
+  productos.forEach(p=>{
+    if(p.fechaOtorg===fechaSel){
+      transacciones.push({tipo:"venta_otorgada",cliente:p.clienteNombre,monto:p.inversion,detalle:`Venta financiada · ${p.producto}`,color:"#8b5cf6",icon:"🛒",signo:"-"});
+    }
+    (p.detalleCuotas||[]).forEach(d=>{
+      if(d.estado==="Pagada"&&fpISO(d.fechaPago)===fechaSel){
+        transacciones.push({tipo:"cobro_venta",cliente:p.clienteNombre,monto:d.montoPagado,detalle:`Cobro cuota ${d.num} · ${p.producto}`,color:"#10b981",icon:"💵",signo:"+"});
+      }
+    });
+  });
+
+  // Ventas de contado ese día
+  ventasContado.forEach(v=>{
+    if(v.fecha===fechaSel){
+      transacciones.push({tipo:"venta_contado",cliente:v.cliente_nombre||nombreCli(v.cliente_id),monto:v.precio_venta,detalle:`Venta contado · ${v.producto||"Producto"}`,color:"#10b981",icon:"💰",signo:"+"});
+    }
+  });
+
+  const filtradas=transacciones.filter(tr=>{
+    if(tipoFiltro==="otorgados")return tr.signo==="-";
+    if(tipoFiltro==="cobros")return tr.signo==="+";
+    return true;
+  });
+
+  const totalCobrado=transacciones.filter(t=>t.signo==="+").reduce((s,t)=>s+t.monto,0);
+  const totalPrestado=transacciones.filter(t=>t.signo==="-").reduce((s,t)=>s+t.monto,0);
+
+  // Formatear fecha en español bonito
+  const fechaBonita=(()=>{
+    const d=new Date(fechaSel+"T12:00:00");
+    return d.toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+  })();
+
+  const cambiarDia=(dias)=>{
+    const d=new Date(fechaSel+"T12:00:00");
+    d.setDate(d.getDate()+dias);
+    setFechaSel(d.toISOString().slice(0,10));
+  };
+  const esHoy=fechaSel===hoy.toISOString().slice(0,10);
+
+  return(
+    <div>
+      <div style={{marginBottom:22}}>
+        <h1 style={{fontSize:22,fontWeight:800,color:t.text,margin:"0 0 4px"}}>📅 Historial de transacciones</h1>
+        <p style={{color:t.sub,margin:0,fontSize:13}}>Mirá qué créditos diste y qué cobraste en cualquier fecha</p>
+      </div>
+
+      {/* Navegador de fecha */}
+      <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"18px 22px",marginBottom:18}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+          <button onClick={()=>cambiarDia(-1)} style={{background:t.bg,border:`1px solid ${t.border}`,borderRadius:10,padding:"10px 16px",cursor:"pointer",color:t.text,fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:6}}>← Día anterior</button>
+          <div style={{textAlign:"center",flex:1,minWidth:200}}>
+            <input type="date" value={fechaSel} onChange={e=>setFechaSel(e.target.value)} max={hoy.toISOString().slice(0,10)}
+              style={{padding:"8px 12px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",fontWeight:700,textAlign:"center"}}/>
+            <div style={{fontSize:13,color:t.sub,marginTop:6,textTransform:"capitalize"}}>{fechaBonita}{esHoy?" · HOY":""}</div>
+          </div>
+          <button onClick={()=>cambiarDia(1)} disabled={esHoy} style={{background:esHoy?t.border:t.bg,border:`1px solid ${t.border}`,borderRadius:10,padding:"10px 16px",cursor:esHoy?"default":"pointer",color:esHoy?t.sub:t.text,fontWeight:700,fontSize:14,opacity:esHoy?0.5:1,display:"flex",alignItems:"center",gap:6}}>Día siguiente →</button>
+        </div>
+      </div>
+
+      {/* Resumen del día */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12,marginBottom:18}}>
+        <div style={{background:"#10b98112",border:"1px solid #10b98130",borderRadius:12,padding:"16px 18px"}}>
+          <div style={{fontSize:11,color:"#10b981",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>💵 Recaudado ese día</div>
+          <div style={{fontSize:24,fontWeight:900,color:"#10b981"}}>{fmt(totalCobrado)}</div>
+        </div>
+        <div style={{background:"#3b82f612",border:"1px solid #3b82f630",borderRadius:12,padding:"16px 18px"}}>
+          <div style={{fontSize:11,color:"#3b82f6",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>📤 Prestado/invertido</div>
+          <div style={{fontSize:24,fontWeight:900,color:"#3b82f6"}}>{fmt(totalPrestado)}</div>
+        </div>
+        <div style={{background:t.card,border:`1px solid ${t.border}`,borderRadius:12,padding:"16px 18px"}}>
+          <div style={{fontSize:11,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>📊 Movimientos</div>
+          <div style={{fontSize:24,fontWeight:900,color:t.text}}>{transacciones.length}</div>
+        </div>
+      </div>
+
+      {/* Filtros */}
+      <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+        {[{id:"todos",label:"Todos"},{id:"cobros",label:"💵 Cobros"},{id:"otorgados",label:"📤 Otorgados"}].map(f=>(
+          <button key={f.id} onClick={()=>setTipoFiltro(f.id)}
+            style={{padding:"8px 14px",borderRadius:8,border:`1px solid ${tipoFiltro===f.id?t.accent:t.border}`,background:tipoFiltro===f.id?t.accent:"transparent",color:tipoFiltro===f.id?"#fff":t.sub,fontWeight:600,fontSize:13,cursor:"pointer"}}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Lista de transacciones */}
+      {filtradas.length===0?(
+        <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"50px 20px",textAlign:"center"}}>
+          <div style={{fontSize:44,marginBottom:12}}>📭</div>
+          <div style={{fontSize:15,fontWeight:700,color:t.text,marginBottom:4}}>Sin movimientos este día</div>
+          <div style={{fontSize:13,color:t.sub}}>No hubo créditos otorgados ni cobros el {fechaBonita}</div>
+        </div>
+      ):(
+        <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,overflow:"hidden"}}>
+          {filtradas.map((tr,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:14,padding:"14px 18px",borderBottom:i<filtradas.length-1?`1px solid ${t.border}`:"none"}}>
+              <div style={{width:40,height:40,borderRadius:10,background:`${tr.color}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{tr.icon}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:14,fontWeight:700,color:t.text,marginBottom:2}}>{tr.cliente}</div>
+                <div style={{fontSize:12,color:t.sub}}>{tr.detalle}</div>
+              </div>
+              <div style={{textAlign:"right",flexShrink:0}}>
+                <div style={{fontSize:16,fontWeight:900,color:tr.signo==="+"?"#10b981":"#3b82f6"}}>{tr.signo==="+"?"+":"−"}{fmt(tr.monto)}</div>
+                <div style={{fontSize:10,color:t.sub,textTransform:"uppercase",fontWeight:600}}>{tr.signo==="+"?"Ingreso":"Egreso"}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Cartera=({creditos,productos,clients,t})=>{
   const creditosActivos=creditos.filter(c=>c.estado!=="Finalizado");
   const plata=creditosActivos.reduce((s,c)=>s+(c.monto-c.monto*(c.cuotasPagadas/c.cuotas)),0);
@@ -3287,6 +3427,7 @@ export default function App(){
   const [usuarioActual,setUsuarioActual]=useState(null);
   const [loginForm,setLoginForm]=useState({user:"",pass:""});
   const [loginErr,setLoginErr]=useState("");
+  const [showRecuperar,setShowRecuperar]=useState(false);
   const [loadingData,setLoadingData]=useState(false);
   const [offline,setOffline]=useState(!navigator.onLine);
   const [colaPendiente,setColaPendiente]=useState(0);
@@ -3438,6 +3579,33 @@ export default function App(){
         <div style={{marginBottom:20}}><label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:4,textTransform:"uppercase"}}>Contraseña</label><input type="password" value={loginForm.pass} onChange={e=>setLoginForm(f=>({...f,pass:e.target.value}))} placeholder="Tu contraseña" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}} onKeyDown={e=>e.key==="Enter"&&doLogin()}/></div>
         {loginErr&&<div style={{color:"#ef4444",fontSize:12,marginBottom:12,textAlign:"center"}}>{loginErr}</div>}
         <button onClick={doLogin} style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:t.accent,color:"#fff",fontWeight:700,fontSize:15,cursor:"pointer"}}>Ingresar</button>
+        <button onClick={()=>setShowRecuperar(true)} style={{width:"100%",background:"none",border:"none",color:t.sub,fontSize:12,cursor:"pointer",marginTop:14,textDecoration:"underline"}}>¿Olvidaste tu usuario o contraseña?</button>
+
+        {/* Modal recuperar cuenta */}
+        {showRecuperar&&(
+          <div onClick={()=>setShowRecuperar(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+            <div onClick={e=>e.stopPropagation()} style={{background:t.card,borderRadius:16,padding:"28px 30px",width:"94%",maxWidth:400,border:`1px solid ${t.border}`,boxShadow:"0 24px 64px rgba(0,0,0,0.4)"}}>
+              <div style={{textAlign:"center",marginBottom:16}}>
+                <div style={{fontSize:40,marginBottom:8}}>🔑</div>
+                <h3 style={{margin:"0 0 6px",fontSize:18,fontWeight:800,color:t.text}}>Recuperar acceso</h3>
+                <p style={{margin:0,fontSize:13,color:t.sub,lineHeight:1.5}}>Si olvidaste tu usuario o contraseña, escribinos y te ayudamos a recuperar tu cuenta.</p>
+              </div>
+              <a href="https://wa.me/5491100000000?text=Hola,%20olvid%C3%A9%20mi%20usuario%20o%20contrase%C3%B1a%20de%20ControlCredit%20y%20necesito%20recuperar%20mi%20cuenta."
+                target="_blank" rel="noopener noreferrer"
+                style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"13px",borderRadius:10,background:"#25D366",color:"#fff",fontWeight:700,fontSize:15,textDecoration:"none",boxSizing:"border-box",marginBottom:10}}>
+                <Icon name="whatsapp" size={18}/>Escribir por WhatsApp
+              </a>
+              <a href="mailto:soporte@controlcredit.com?subject=Recuperar%20cuenta%20ControlCredit&body=Hola,%20olvid%C3%A9%20mi%20acceso%20y%20necesito%20recuperar%20mi%20cuenta."
+                style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"13px",borderRadius:10,background:"transparent",color:t.accent,fontWeight:700,fontSize:14,textDecoration:"none",boxSizing:"border-box",border:`1px solid ${t.accent}`,marginBottom:14}}>
+                ✉️ Enviar un email
+              </a>
+              <div style={{background:t.bg,borderRadius:10,padding:"12px 14px",fontSize:12,color:t.sub,lineHeight:1.5,marginBottom:14}}>
+                💡 <strong style={{color:t.text}}>Consejo:</strong> Anotá tu usuario y contraseña en un lugar seguro para no volver a olvidarlos.
+              </div>
+              <button onClick={()=>setShowRecuperar(false)} style={{width:"100%",background:"none",border:`1px solid ${t.border}`,color:t.sub,borderRadius:10,padding:"10px",fontSize:13,fontWeight:600,cursor:"pointer"}}>Cerrar</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -3532,6 +3700,7 @@ export default function App(){
     {id:"creditos",label:"Créditos",icon:"creditos"},
     {id:"productos",label:"Productos",icon:"productos"},
     {id:"cartera",label:"Cartera",icon:"cartera"},
+    {id:"historial",label:"Historial",icon:"calendar"},
     {id:"alertas",label:"Alertas",icon:"alert"},
     {id:"presupuesto",label:"Presupuesto",icon:"coin"},
     ...(esAdmin?[{id:"usuarios",label:"Usuarios",icon:"users"}]:[]),
@@ -3761,6 +3930,7 @@ export default function App(){
           {screen==="creditos"&&<Creditos creditos={creditos} setCreditos={setCreditos} clients={clients} productos={productos} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
           {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} creditos={creditos} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
           {screen==="cartera"&&<Cartera creditos={creditos} productos={productos} clients={clients} t={t}/>}
+          {screen==="historial"&&<Historial creditos={creditos} productos={productos} ventasContado={ventasContado} clients={clients} t={t}/>}
           {screen==="alertas"&&<Alertas creditos={creditos} clients={clients} t={t}/>}
           {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t} allClients={allClients} allCreditos={allCreditos} allProductos={allProductos} allVentasContado={allVentasContado}/>}
           {screen==="presupuesto"&&<Presupuesto t={t}/>}
@@ -3940,6 +4110,7 @@ export default function App(){
           {screen==="creditos"&&<Creditos creditos={creditos} setCreditos={setCreditos} clients={clients} productos={productos} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
           {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} creditos={creditos} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
           {screen==="cartera"&&<Cartera creditos={creditos} productos={productos} clients={clients} t={t}/>}
+          {screen==="historial"&&<Historial creditos={creditos} productos={productos} ventasContado={ventasContado} clients={clients} t={t}/>}
           {screen==="alertas"&&<Alertas creditos={creditos} clients={clients} t={t}/>}
           {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t} allClients={allClients} allCreditos={allCreditos} allProductos={allProductos} allVentasContado={allVentasContado}/>}
           {screen==="presupuesto"&&<Presupuesto t={t}/>}

@@ -73,8 +73,14 @@ const productoFromDB=(r)=>({id:r.id,clienteId:r.cliente_id,clienteNombre:r.clien
 
 // ── PDF ENGINE ────────────────────────────────────────────────────────────────
 const abrirPDF=(html,nombre)=>{
-  const estiloImpresion=`<style>@media print{@page{margin:15mm;size:A4}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style>`;
-  const fullHtml=`<!DOCTYPE html><html><head><meta charset="UTF-8">${estiloImpresion}<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:12px;color:#1a1a2e;background:#fff;padding:20px}.header{background:linear-gradient(135deg,#1e3a8a,#3b82f6);color:#fff;padding:24px 28px;border-radius:10px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center}.logo{font-size:26px;font-weight:900;letter-spacing:-1px}.logo span{opacity:0.7}.subtitulo{font-size:11px;opacity:0.8;margin-top:3px}.seccion{margin-bottom:18px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}.seccion-titulo{background:#f8fafc;padding:10px 16px;font-weight:700;font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #e2e8f0}.seccion-body{padding:14px 16px}table{width:100%;border-collapse:collapse}td,th{padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:11px;text-align:left}th{font-weight:700;color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:0.04em}tr:last-child td{border-bottom:none}.total-row td{background:#1e3a8a;color:#fff;font-weight:700;border:none;padding:10px 12px}.metrica{display:inline-block;background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 16px;margin:4px;min-width:120px;text-align:center}.metrica-label{font-size:9px;color:#64748b;text-transform:uppercase;font-weight:700;margin-bottom:3px}.metrica-valor{font-size:16px;font-weight:900;color:#1e40af}.badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700}.badge-verde{background:#d1fae5;color:#065f46}.badge-rojo{background:#fee2e2;color:#991b1b}.badge-amarillo{background:#fef3c7;color:#92400e}.footer{text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8}</style></head><body>${html}<script>window.onload=()=>{window.print();}</script></body></html>`;
+  const estiloImpresion=`<style>@media print{@page{margin:15mm;size:A4}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.cc-toolbar{display:none !important}}</style>`;
+  // Barra superior con botones Volver e Imprimir (visible solo en pantalla, se oculta al imprimir)
+  const toolbar=`<div class="cc-toolbar" style="position:fixed;top:0;left:0;right:0;background:#0f172a;padding:10px 14px;display:flex;gap:10px;align-items:center;justify-content:space-between;z-index:99999;box-shadow:0 2px 12px rgba(0,0,0,0.3)">
+    <button onclick="history.length>1?history.back():window.close()" style="background:#334155;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:15px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif">← Volver</button>
+    <span style="color:#94a3b8;font-size:13px;font-weight:600;font-family:Arial,sans-serif">ControlCredit — PDF</span>
+    <button onclick="window.print()" style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:15px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif">🖨 Imprimir</button>
+  </div>`;
+  const fullHtml=`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">${estiloImpresion}<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:12px;color:#1a1a2e;background:#fff;padding:20px;padding-top:70px}.header{background:linear-gradient(135deg,#1e3a8a,#3b82f6);color:#fff;padding:24px 28px;border-radius:10px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center}.logo{font-size:26px;font-weight:900;letter-spacing:-1px}.logo span{opacity:0.7}.subtitulo{font-size:11px;opacity:0.8;margin-top:3px}.seccion{margin-bottom:18px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}.seccion-titulo{background:#f8fafc;padding:10px 16px;font-weight:700;font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #e2e8f0}.seccion-body{padding:14px 16px}table{width:100%;border-collapse:collapse}td,th{padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:11px;text-align:left}th{font-weight:700;color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:0.04em}tr:last-child td{border-bottom:none}.total-row td{background:#1e3a8a;color:#fff;font-weight:700;border:none;padding:10px 12px}.metrica{display:inline-block;background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 16px;margin:4px;min-width:120px;text-align:center}.metrica-label{font-size:9px;color:#64748b;text-transform:uppercase;font-weight:700;margin-bottom:3px}.metrica-valor{font-size:16px;font-weight:900;color:#1e40af}.badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700}.badge-verde{background:#d1fae5;color:#065f46}.badge-rojo{background:#fee2e2;color:#991b1b}.badge-amarillo{background:#fef3c7;color:#92400e}.footer{text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8}</style></head><body>${toolbar}${html}</body></html>`;
   const win=window.open("","_blank");
   if(win){win.document.write(fullHtml);win.document.close();}
 };
@@ -660,15 +666,19 @@ const Field=({label,value,onChange,type="text",options,t,placeholder})=>(
 );
 
 const MetricCard=({label,value,icon,color,sub,t})=>(
-  <div style={{background:t.card,borderRadius:14,padding:"18px 20px",border:`1px solid ${t.border}`,display:"flex",flexDirection:"column",gap:8,transition:"transform 0.2s"}}
-    onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"}
-    onMouseLeave={e=>e.currentTarget.style.transform="translateY(0)"}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-      <span style={{fontSize:11,color:t.sub,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>{label}</span>
-      <span style={{width:34,height:34,borderRadius:10,background:`${color}18`,display:"flex",alignItems:"center",justifyContent:"center",color}}><Icon name={icon} size={17}/></span>
+  <div style={{position:"relative",background:t.card,borderRadius:16,padding:"18px 18px 16px",border:`1px solid ${t.border}`,display:"flex",flexDirection:"column",gap:10,overflow:"hidden",transition:"transform 0.2s,box-shadow 0.2s"}}
+    onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 8px 24px ${color}22`;}}
+    onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none";}}>
+    {/* Acento de color superior */}
+    <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:`linear-gradient(90deg,${color},${color}44)`}}/>
+    {/* Resplandor sutil detrás del ícono */}
+    <div style={{position:"absolute",top:-20,right:-20,width:80,height:80,borderRadius:"50%",background:`${color}0d`,pointerEvents:"none"}}/>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <span style={{fontSize:10.5,color:t.sub,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em"}}>{label}</span>
+      <span style={{width:38,height:38,borderRadius:11,background:`${color}1a`,display:"flex",alignItems:"center",justifyContent:"center",color,flexShrink:0,boxShadow:`inset 0 0 0 1px ${color}22`}}><Icon name={icon} size={18}/></span>
     </div>
-    <div style={{fontSize:21,fontWeight:800,color:t.text}}>{value}</div>
-    {sub&&<div style={{fontSize:11,color:t.sub}}>{sub}</div>}
+    <div style={{fontSize:23,fontWeight:900,color:t.text,letterSpacing:"-0.5px",lineHeight:1.1}}>{value}</div>
+    {sub&&<div style={{fontSize:11,color:t.sub,fontWeight:500}}>{sub}</div>}
   </div>
 );
 
@@ -1427,7 +1437,7 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
   return(
     <div>
       <div style={{marginBottom:22,display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
-        <div><h1 style={{fontSize:24,fontWeight:800,color:t.text,margin:"0 0 4px"}}>Dashboard</h1><p style={{color:t.sub,margin:0,fontSize:14}}>{new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"})}</p></div>
+        <div><h1 style={{fontSize:24,fontWeight:900,color:t.text,margin:"0 0 4px",letterSpacing:"-0.5px"}}>Dashboard</h1><p style={{color:t.sub,margin:0,fontSize:14,textTransform:"capitalize"}}>{new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"})}</p></div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
           {/* BACKUP EMAIL */}
           <div style={{display:"flex",gap:6,alignItems:"center",background:t.card,padding:"8px 12px",borderRadius:10,border:`1px solid ${t.border}`}}>
@@ -3998,6 +4008,7 @@ export default function App(){
               {/* Opciones de navegación */}
               <div style={{width:"100%",height:1,background:"#ffffff20",margin:"4px 0"}}/>
               {[
+                {label:"Historial",icon:"📅",action:()=>{setScreen("historial");setFabOpen(false);}},
                 {label:"Presupuesto",icon:"🧮",action:()=>{setScreen("presupuesto");setFabOpen(false);}},
                 {label:"Cartera",icon:"💼",action:()=>{setScreen("cartera");setFabOpen(false);}},
                 {label:"Papelera",icon:"🗑",action:()=>{setScreen("papelera");setFabOpen(false);}},

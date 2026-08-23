@@ -104,11 +104,13 @@ const generatePDF=(credito)=>{
     </tr>`;
   }).join("");
   const pct=Math.round((credito.cuotasPagadas/credito.cuotas)*100);
+  const esRefi=(credito.historial||[]).some(h=>h.tipo==="refinanciacion");
   const html=`
     <div class="header">
       <div><div class="logo">Control<span>Credit</span></div><div class="subtitulo">Sistema de Gestión Financiera</div></div>
-      <div style="text-align:right"><div style="font-size:13px;font-weight:700">Estado de Deuda</div><div style="font-size:11px;opacity:0.8">Generado: ${fecha}</div></div>
+      <div style="text-align:right"><div style="font-size:13px;font-weight:700">${esRefi?"Refinanciación":"Estado de Deuda"}</div><div style="font-size:11px;opacity:0.8">Generado: ${fecha}</div></div>
     </div>
+    ${esRefi?`<div style="background:#ede9fe;border-left:4px solid #8b5cf6;padding:12px 16px;border-radius:0 8px 8px 0;margin-bottom:18px;font-size:12px;color:#5b21b6"><strong>🔄 Crédito refinanciado.</strong> Este crédito surge de la refinanciación de una deuda anterior con nuevas condiciones acordadas.</div>`:""}
     <div class="seccion">
       <div class="seccion-titulo">Datos del cliente</div>
       <div class="seccion-body">
@@ -2431,6 +2433,8 @@ const Creditos=({creditos,setCreditos,clients,productos=[],usuarioActual,soloVer
   const [expandido,setExpandido]=useState(null);
   const [notasItem,setNotasItem]=useState(null);
   const [loading,setLoading]=useState(false);
+  const [refiItem,setRefiItem]=useState(null);
+  const [refiForm,setRefiForm]=useState({interes:"25",cuotas:"4",frecuencia:"Mensual",primerPago:""});
   const EF={clienteId:"",monto:"",totalCobrar:"",cuotas:"",frecuencia:"Mensual",fechaOtorg:new Date().toISOString().slice(0,10),primerPago:"",estado:"Al día",comentarios:""};
   const [form,setForm]=useState(EF);
   const [formEdit,setFormEdit]=useState({monto:"",totalCobrar:"",cuotas:"",frecuencia:"Mensual",estado:"Al día",comentarios:""});
@@ -2448,6 +2452,54 @@ const Creditos=({creditos,setCreditos,clients,productos=[],usuarioActual,soloVer
     setCreditoEditando(c);
     setFormEdit({monto:c.monto,totalCobrar:c.totalCobrar,cuotas:c.cuotas,frecuencia:c.frecuencia,estado:c.estado,comentarios:c.comentarios||""});
     setEditModal(true);
+  };
+
+  // ── REFINANCIACIÓN ──
+  const abrirRefinanciar=(c)=>{
+    const hoyISO=new Date().toISOString().slice(0,10);
+    setRefiItem(c);
+    setRefiForm({interes:"25",cuotas:"4",frecuencia:c.frecuencia||"Mensual",primerPago:generarFechasCuotas(hoyISO,c.frecuencia||"Mensual",1)[0]||""});
+  };
+
+  const confirmarRefinanciar=async()=>{
+    if(!refiItem)return;
+    const saldo=refiItem.saldoPendiente||0;
+    const interesN=+refiForm.interes||0;
+    const cuotasN=+refiForm.cuotas||1;
+    const nuevoTotal=Math.round(saldo+saldo*(interesN/100));
+    const nuevoVC=Math.round(nuevoTotal/cuotasN);
+    const ganancia=nuevoTotal-saldo;
+    const hoyISO=new Date().toISOString().slice(0,10);
+    const primerPago=refiForm.primerPago||generarFechasCuotas(hoyISO,refiForm.frecuencia,1)[0];
+    const det=crearDetalleCuotasDesde(primerPago,refiForm.frecuencia,cuotasN);
+    if(!window.confirm(`Refinanciar deuda de ${refiItem.clienteNombre}:\n\nSaldo actual: ${fmt(saldo)}\nNuevo total (${interesN}%): ${fmt(nuevoTotal)}\n${cuotasN} cuotas de ${fmt(nuevoVC)}\n\nEl crédito anterior quedará marcado como REFINANCIADO.`))return;
+    setLoading(true);
+
+    // 1) Marcar el crédito viejo como Finalizado + flag refinanciado
+    const histViejo=[...(refiItem.historial||[]),{tipo:"refinanciado",fecha:new Date().toLocaleDateString("es-AR"),saldoRefinanciado:saldo}];
+    await sb.from("creditos").update({estado:"Finalizado",historial:histViejo}).eq("id",refiItem.id);
+
+    // 2) Crear el crédito nuevo (refinanciación)
+    const nuevoCredito={
+      cliente_id:refiItem.clienteId,cliente_nombre:refiItem.clienteNombre,
+      monto:saldo,total_cobrar:nuevoTotal,ganancia,cuotas:cuotasN,cuotas_pagadas:0,
+      valor_cuota:nuevoVC,saldo_cobrado:0,saldo_pendiente:nuevoTotal,frecuencia:refiForm.frecuencia,
+      fecha_otorg:hoyISO,proximo_pago:det[0]?.fechaVenc||"",estado:"Al día",
+      comentarios:`Refinanciación de crédito anterior (saldo ${fmt(saldo)})`,
+      historial:[{tipo:"refinanciacion",fecha:new Date().toLocaleDateString("es-AR"),creditoOrigen:refiItem.id}],
+      detalle_cuotas:det,usuario_id:usuarioActual?.id||0,
+    };
+    const {data:creado}=await sb.from("creditos").insert(nuevoCredito).select().single();
+
+    // 3) Actualizar estado local
+    setCreditos(cs=>{
+      const actualizados=cs.map(x=>x.id===refiItem.id?{...x,estado:"Finalizado",historial:histViejo}:x);
+      if(creado)return [...actualizados,creditoFromDB(creado)];
+      return actualizados;
+    });
+    setLoading(false);
+    setRefiItem(null);
+    alert(`✅ Crédito refinanciado. Nuevo crédito de ${fmt(nuevoTotal)} en ${cuotasN} cuotas.`);
   };
 
   const guardarEdicion=async()=>{
@@ -2540,9 +2592,11 @@ const Creditos=({creditos,setCreditos,clients,productos=[],usuarioActual,soloVer
                 <div style={{padding:"18px 22px"}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
                     <div style={{flex:1,minWidth:200}}>
-                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6,flexWrap:"wrap"}}>
                         <span style={{fontSize:15,fontWeight:700,color:t.text}}>{c.clienteNombre}</span>
                         <Badge status={c.estado}/>
+                        {(c.historial||[]).some(h=>h.tipo==="refinanciado")&&<span style={{fontSize:10,background:"#8b5cf6",color:"#fff",borderRadius:20,padding:"2px 9px",fontWeight:700}}>🔄 Refinanciado</span>}
+                        {(c.historial||[]).some(h=>h.tipo==="refinanciacion")&&<span style={{fontSize:10,background:"#10b981",color:"#fff",borderRadius:20,padding:"2px 9px",fontWeight:700}}>✨ Refinanciación</span>}
                         <span style={{fontSize:11,color:t.sub,background:t.bg,padding:"2px 8px",borderRadius:6,fontWeight:600}}>{c.frecuencia}</span>
                       </div>
                       <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>
@@ -2559,6 +2613,7 @@ const Creditos=({creditos,setCreditos,clients,productos=[],usuarioActual,soloVer
                         <button onClick={()=>setNotasItem(c)} style={{background:nN>0?"#f59e0b":"none",border:`1px solid ${nN>0?"#f59e0b":t.border}`,color:nN>0?"#fff":t.sub,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5}} title="Notas del cliente">📝 Notas{nN>0&&<span style={{background:"#fff",color:"#f59e0b",borderRadius:20,padding:"0 6px",fontSize:10,fontWeight:800}}>{nN}</span>}</button>
                       );})()}
                       {!soloVer&&<button onClick={()=>abrirEdicion(c)} style={{background:"none",border:`1px solid ${t.border}`,color:t.sub,borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:3}} title="Editar crédito"><Icon name="edit" size={13}/></button>}
+                      {!soloVer&&c.estado!=="Finalizado"&&c.saldoPendiente>0&&<button onClick={()=>abrirRefinanciar(c)} style={{background:"none",border:"1px solid #8b5cf6",color:"#8b5cf6",borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5}} title="Refinanciar deuda">🔄 Refinanciar</button>}
                       <button onClick={()=>generatePDF(c)} style={{background:"none",border:`1px solid ${t.border}`,color:t.sub,borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:3}}><Icon name="pdf" size={13}/></button>
                       {!soloVer&&<UploadBtn label={c.pagareUrl?"📄 Pagaré ✓":"📄 Pagaré"} url={c.pagareUrl} accept="image/*,.pdf" color={c.pagareUrl?"#10b981":"#f59e0b"} t={t} onUpload={async(url)=>{await sb.from("creditos").update({pagare_url:url}).eq("id",c.id);setCreditos(cs=>cs.map(x=>x.id===c.id?{...x,pagareUrl:url}:x));}}/>}
                       {!soloVer&&<button onClick={()=>eliminar(c.id)} style={{background:"none",border:"1px solid #fca5a5",color:"#ef4444",borderRadius:8,padding:"7px 10px",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center"}}><Icon name="trash" size={13}/></button>}
@@ -2592,6 +2647,84 @@ const Creditos=({creditos,setCreditos,clients,productos=[],usuarioActual,soloVer
         </div>
       )}
       <ModalNotas open={!!notasItem} onClose={()=>setNotasItem(null)} item={notasItem} tabla="creditos" onSaved={(id,json)=>setCreditos(cs=>cs.map(x=>x.id===id?{...x,comentarios:json}:x))} t={t}/>
+
+      {/* MODAL REFINANCIACIÓN */}
+      {refiItem&&(()=>{
+        const saldo=refiItem.saldoPendiente||0;
+        const interesN=+refiForm.interes||0;
+        const cuotasN=+refiForm.cuotas||1;
+        const nuevoTotal=Math.round(saldo+saldo*(interesN/100));
+        const nuevoVC=Math.round(nuevoTotal/cuotasN);
+        return(
+        <div onClick={()=>setRefiItem(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+          <div onClick={e=>e.stopPropagation()} className="cc-modal" style={{background:t.card,borderRadius:16,padding:"24px 26px",width:"94%",maxWidth:460,maxHeight:"88vh",overflowY:"auto",border:`1px solid ${t.border}`,boxShadow:"0 24px 64px rgba(0,0,0,0.4)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
+              <div>
+                <h3 style={{margin:"0 0 3px",fontSize:18,fontWeight:800,color:t.text}}>🔄 Refinanciar deuda</h3>
+                <p style={{margin:0,fontSize:13,color:t.sub}}>{refiItem.clienteNombre}</p>
+              </div>
+              <button onClick={()=>setRefiItem(null)} style={{background:"none",border:"none",cursor:"pointer",color:t.sub,padding:4}}><Icon name="close" size={18}/></button>
+            </div>
+
+            <div style={{background:"#8b5cf610",border:"1px solid #8b5cf630",borderRadius:10,padding:"12px 14px",marginBottom:16}}>
+              <div style={{fontSize:11,color:"#8b5cf6",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Saldo actual a refinanciar</div>
+              <div style={{fontSize:24,fontWeight:900,color:t.text}}>{fmt(saldo)}</div>
+            </div>
+
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Nuevo interés (%)</label>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+                {["10","15","20","25","30","40"].map(p=>(
+                  <button key={p} onClick={()=>setRefiForm(f=>({...f,interes:p}))} style={{padding:"6px 12px",borderRadius:7,border:`1px solid ${refiForm.interes===p?"#8b5cf6":t.border}`,background:refiForm.interes===p?"#8b5cf6":"transparent",color:refiForm.interes===p?"#fff":t.sub,fontWeight:600,fontSize:12,cursor:"pointer"}}>{p}%</button>
+                ))}
+              </div>
+              <input type="number" value={refiForm.interes} onChange={e=>setRefiForm(f=>({...f,interes:e.target.value}))} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Cantidad de cuotas</label>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+                {["1","2","3","4","6","8","12"].map(cu=>(
+                  <button key={cu} onClick={()=>setRefiForm(f=>({...f,cuotas:cu}))} style={{padding:"6px 12px",borderRadius:7,border:`1px solid ${refiForm.cuotas===cu?"#8b5cf6":t.border}`,background:refiForm.cuotas===cu?"#8b5cf6":"transparent",color:refiForm.cuotas===cu?"#fff":t.sub,fontWeight:600,fontSize:12,cursor:"pointer"}}>{cu}</button>
+                ))}
+              </div>
+              <input type="number" value={refiForm.cuotas} onChange={e=>setRefiForm(f=>({...f,cuotas:e.target.value}))} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Frecuencia</label>
+              <div style={{display:"flex",gap:8}}>
+                {["Semanal","Quincenal","Mensual"].map(f=>(
+                  <button key={f} onClick={()=>setRefiForm(x=>({...x,frecuencia:f,primerPago:generarFechasCuotas(new Date().toISOString().slice(0,10),f,1)[0]||""}))} style={{flex:1,padding:"9px 6px",borderRadius:8,border:`1px solid ${refiForm.frecuencia===f?"#8b5cf6":t.border}`,background:refiForm.frecuencia===f?"#8b5cf615":"transparent",color:refiForm.frecuencia===f?"#8b5cf6":t.sub,fontWeight:refiForm.frecuencia===f?700:500,fontSize:12,cursor:"pointer"}}>{f}</button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{marginBottom:16}}>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:t.sub,marginBottom:6,textTransform:"uppercase"}}>Fecha 1° cobro</label>
+              <input type="date" value={refiForm.primerPago} onChange={e=>setRefiForm(f=>({...f,primerPago:e.target.value}))} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:`1px solid ${t.inputBorder}`,background:t.input,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+
+            {/* Resumen del nuevo crédito */}
+            <div style={{background:t.bg,borderRadius:10,padding:"14px 16px",marginBottom:16,border:`1px solid ${t.border}`}}>
+              <div style={{fontSize:11,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:8}}>Nuevo crédito refinanciado</div>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:13,color:t.sub}}>Total a cobrar</span><span style={{fontSize:15,fontWeight:800,color:t.text}}>{fmt(nuevoTotal)}</span></div>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:13,color:t.sub}}>Valor por cuota</span><span style={{fontSize:15,fontWeight:800,color:"#10b981"}}>{fmt(nuevoVC)}</span></div>
+              <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:13,color:t.sub}}>Tu ganancia extra</span><span style={{fontSize:15,fontWeight:800,color:"#8b5cf6"}}>{fmt(nuevoTotal-saldo)}</span></div>
+            </div>
+
+            <div style={{background:"#fef3c7",borderRadius:8,padding:"10px 12px",fontSize:11,color:"#92400e",marginBottom:16}}>
+              ⚠️ El crédito anterior quedará marcado como <strong>Refinanciado</strong> y no contará en las métricas. El nuevo crédito arranca limpio.
+            </div>
+
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setRefiItem(null)} style={{flex:1,background:"none",border:`1px solid ${t.border}`,color:t.sub,borderRadius:10,padding:"12px",fontWeight:700,fontSize:14,cursor:"pointer"}}>Cancelar</button>
+              <button onClick={confirmarRefinanciar} disabled={loading} style={{flex:2,background:"#8b5cf6",color:"#fff",border:"none",borderRadius:10,padding:"12px",fontWeight:800,fontSize:14,cursor:"pointer"}}>{loading?"Procesando...":"🔄 Confirmar refinanciación"}</button>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
 
       <Modal open={modal} onClose={()=>setModal(false)} title="Nuevo crédito" t={t}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>

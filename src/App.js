@@ -538,21 +538,28 @@ const backupPorEmail=(creditos,clientes,productos,ventasContado,emailDestino)=>{
     XLSX.utils.book_append_sheet(wb,ws5,"Morosos");
   }
 
-  // ── HOJA 6: RESUMEN ──
-  const totalPendiente=activos.reduce((s,c)=>s+c.saldoPendiente,0);
-  const gananciaReal=creditos.reduce((s,c)=>s+(c.ganancia/c.cuotas)*c.cuotasPagadas,0);
+  // ── HOJA 6: RESUMEN ── (mismo cálculo que el Dashboard: créditos + ventas financiadas)
+  const totalPendienteCred=activos.reduce((s,c)=>s+c.saldoPendiente,0);
+  const totalPendienteProd=prodActivos.reduce((s,p)=>s+Math.max(0,p.precioFinanciado-p.saldoCobrado),0);
+  const totalPendiente=totalPendienteCred+totalPendienteProd;
+  // Ganancia realizada = de créditos + de ventas financiadas
+  const gananciaRealCred=creditos.reduce((s,c)=>s+(c.ganancia/c.cuotas)*c.cuotasPagadas,0);
+  const gananciaRealProd=productos.reduce((s,p)=>s+((p.ganancia||0)/(p.cuotas||1))*(p.cuotasPagadas||0),0);
+  const gananciaReal=gananciaRealCred+gananciaRealProd;
   const wsResumen=XLSX.utils.aoa_to_sheet([
     ["RESUMEN CONTROLCREDIT",`Backup ${fecha}`],
     [""],
     ["MÉTRICA","VALOR"],
     ["Créditos activos",activos.length],
     ["Clientes morosos",morosos.length],
-    ["Saldo total pendiente",totalPendiente],
+    ["Saldo total pendiente (créditos + ventas)",totalPendiente],
+    ["  · Solo créditos",totalPendienteCred],
+    ["  · Solo ventas financiadas",totalPendienteProd],
     ["Ganancia realizada",gananciaReal],
     ["Ventas financiadas activas",prodActivos.length],
     ["Ventas de contado",ventasContado.length],
   ]);
-  wsResumen["!cols"]=[{wch:30},{wch:20}];
+  wsResumen["!cols"]=[{wch:38},{wch:20}];
   XLSX.utils.book_append_sheet(wb,wsResumen,"Resumen");
 
   // Descargar el Excel

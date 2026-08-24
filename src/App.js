@@ -2468,11 +2468,16 @@ const Creditos=({creditos,setCreditos,clients,productos=[],usuarioActual,soloVer
     const cuotasN=+refiForm.cuotas||1;
     const nuevoTotal=Math.round(saldo+saldo*(interesN/100));
     const nuevoVC=Math.round(nuevoTotal/cuotasN);
-    const ganancia=nuevoTotal-saldo;
+    // Capital REAL original: si el crédito viejo ya era una refinanciación, arrastramos su capital original.
+    // Si no, el capital real es lo que se prestó originalmente (su monto).
+    const refiPrevia=(refiItem.historial||[]).find(h=>h.tipo==="refinanciacion");
+    const capitalReal=refiPrevia?.capitalOriginal||refiItem.monto||saldo;
+    // Ganancia total = todo lo que se va a cobrar menos el capital que realmente se prestó
+    const gananciaTotal=nuevoTotal-capitalReal;
     const hoyISO=new Date().toISOString().slice(0,10);
     const primerPago=refiForm.primerPago||generarFechasCuotas(hoyISO,refiForm.frecuencia,1)[0];
     const det=crearDetalleCuotasDesde(primerPago,refiForm.frecuencia,cuotasN);
-    if(!window.confirm(`Refinanciar deuda de ${refiItem.clienteNombre}:\n\nSaldo actual: ${fmt(saldo)}\nNuevo total (${interesN}%): ${fmt(nuevoTotal)}\n${cuotasN} cuotas de ${fmt(nuevoVC)}\n\nEl crédito anterior quedará marcado como REFINANCIADO.`))return;
+    if(!window.confirm(`Refinanciar deuda de ${refiItem.clienteNombre}:\n\nSaldo actual: ${fmt(saldo)}\nNuevo total (${interesN}%): ${fmt(nuevoTotal)}\n${cuotasN} cuotas de ${fmt(nuevoVC)}\n\nCapital real prestado: ${fmt(capitalReal)}\nTu ganancia total: ${fmt(gananciaTotal)}\n\nEl crédito anterior quedará marcado como REFINANCIADO.`))return;
     setLoading(true);
 
     // 1) Marcar el crédito viejo como Finalizado + flag refinanciado
@@ -2480,13 +2485,14 @@ const Creditos=({creditos,setCreditos,clients,productos=[],usuarioActual,soloVer
     await sb.from("creditos").update({estado:"Finalizado",historial:histViejo}).eq("id",refiItem.id);
 
     // 2) Crear el crédito nuevo (refinanciación)
+    // monto = capital real ($200.000), total_cobrar = nuevo total, ganancia = todo lo ganado
     const nuevoCredito={
       cliente_id:refiItem.clienteId,cliente_nombre:refiItem.clienteNombre,
-      monto:saldo,total_cobrar:nuevoTotal,ganancia,cuotas:cuotasN,cuotas_pagadas:0,
+      monto:capitalReal,total_cobrar:nuevoTotal,ganancia:gananciaTotal,cuotas:cuotasN,cuotas_pagadas:0,
       valor_cuota:nuevoVC,saldo_cobrado:0,saldo_pendiente:nuevoTotal,frecuencia:refiForm.frecuencia,
       fecha_otorg:hoyISO,proximo_pago:det[0]?.fechaVenc||"",estado:"Al día",
-      comentarios:`Refinanciación de crédito anterior (saldo ${fmt(saldo)})`,
-      historial:[{tipo:"refinanciacion",fecha:new Date().toLocaleDateString("es-AR"),creditoOrigen:refiItem.id}],
+      comentarios:`Refinanciación · saldo refinanciado ${fmt(saldo)} · capital original ${fmt(capitalReal)}`,
+      historial:[{tipo:"refinanciacion",fecha:new Date().toLocaleDateString("es-AR"),creditoOrigen:refiItem.id,capitalOriginal:capitalReal,saldoRefinanciado:saldo}],
       detalle_cuotas:det,usuario_id:usuarioActual?.id||0,
     };
     const {data:creado}=await sb.from("creditos").insert(nuevoCredito).select().single();
@@ -2655,6 +2661,9 @@ const Creditos=({creditos,setCreditos,clients,productos=[],usuarioActual,soloVer
         const cuotasN=+refiForm.cuotas||1;
         const nuevoTotal=Math.round(saldo+saldo*(interesN/100));
         const nuevoVC=Math.round(nuevoTotal/cuotasN);
+        const refiPrevia=(refiItem.historial||[]).find(h=>h.tipo==="refinanciacion");
+        const capitalReal=refiPrevia?.capitalOriginal||refiItem.monto||saldo;
+        const gananciaTotal=nuevoTotal-capitalReal;
         return(
         <div onClick={()=>setRefiItem(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
           <div onClick={e=>e.stopPropagation()} className="cc-modal" style={{background:t.card,borderRadius:16,padding:"24px 26px",width:"94%",maxWidth:460,maxHeight:"88vh",overflowY:"auto",border:`1px solid ${t.border}`,boxShadow:"0 24px 64px rgba(0,0,0,0.4)"}}>
@@ -2708,9 +2717,10 @@ const Creditos=({creditos,setCreditos,clients,productos=[],usuarioActual,soloVer
             {/* Resumen del nuevo crédito */}
             <div style={{background:t.bg,borderRadius:10,padding:"14px 16px",marginBottom:16,border:`1px solid ${t.border}`}}>
               <div style={{fontSize:11,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:8}}>Nuevo crédito refinanciado</div>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:13,color:t.sub}}>Capital real prestado</span><span style={{fontSize:14,fontWeight:700,color:t.text}}>{fmt(capitalReal)}</span></div>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:13,color:t.sub}}>Total a cobrar</span><span style={{fontSize:15,fontWeight:800,color:t.text}}>{fmt(nuevoTotal)}</span></div>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:13,color:t.sub}}>Valor por cuota</span><span style={{fontSize:15,fontWeight:800,color:"#10b981"}}>{fmt(nuevoVC)}</span></div>
-              <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:13,color:t.sub}}>Tu ganancia extra</span><span style={{fontSize:15,fontWeight:800,color:"#8b5cf6"}}>{fmt(nuevoTotal-saldo)}</span></div>
+              <div style={{display:"flex",justifyContent:"space-between",paddingTop:6,borderTop:`1px solid ${t.border}`}}><span style={{fontSize:13,color:t.sub,fontWeight:700}}>Tu ganancia total</span><span style={{fontSize:16,fontWeight:900,color:"#8b5cf6"}}>{fmt(gananciaTotal)}</span></div>
             </div>
 
             <div style={{background:"#fef3c7",borderRadius:8,padding:"10px 12px",fontSize:11,color:"#92400e",marginBottom:16}}>

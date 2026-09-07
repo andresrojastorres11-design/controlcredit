@@ -1316,6 +1316,8 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
   const [mesSel,setMesSel]=useState(hoy.getMonth()); // mes seleccionado para el panel mensual (0-11)
   const [emailBackup,setEmailBackup]=useState("");
   const [showEmailInput,setShowEmailInput]=useState(false);
+  const [showWaResumen,setShowWaResumen]=useState(false);
+  const [waResumenTel,setWaResumenTel]=useState(()=>{try{return localStorage.getItem("cc_wa_resumen")||"";}catch{return "";}});
 
   const activos=creditos.filter(c=>c.estado!=="Finalizado");
   const productosActivos=productos.filter(p=>p.estado!=="Finalizado");
@@ -1786,7 +1788,47 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
       )}
         <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,marginBottom:20,overflow:"hidden"}}>
           <div style={{padding:"18px 22px 0"}}>
-            <h3 style={{margin:"0 0 14px",fontSize:16,fontWeight:800,color:t.text}}>💳 Pagos</h3>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,marginBottom:14}}>
+              <h3 style={{margin:0,fontSize:16,fontWeight:800,color:t.text}}>💳 Pagos</h3>
+              {/* Botón enviar resumen por WhatsApp */}
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                {showWaResumen?(
+                  <>
+                    <input value={waResumenTel} onChange={e=>setWaResumenTel(e.target.value)} placeholder="Ej: 5492211234567" type="tel"
+                      style={{padding:"7px 10px",borderRadius:8,border:`1px solid ${t.border}`,background:t.input,color:t.text,fontSize:13,outline:"none",width:170}}/>
+                    <button onClick={()=>{
+                      if(!waResumenTel.trim()){alert("Ingresá un número de WhatsApp");return;}
+                      try{localStorage.setItem("cc_wa_resumen",waResumenTel.trim());}catch(e){}
+                      // Armar el mensaje con la lista activa
+                      const nombreTab=tabPagos==="aldia"?"AL DÍA (próximos 3 días)":tabPagos==="vencido"?"VENCIDOS":"MOROSOS";
+                      const emoji=tabPagos==="aldia"?"🟢":tabPagos==="vencido"?"🟡":"🔴";
+                      let msg=`${emoji} *ESTADO DE CUENTAS — ${nombreTab}*\n📅 ${new Date().toLocaleDateString("es-AR")}\n\n`;
+                      if(listaActiva.length===0){msg+="Sin clientes en esta categoría.";}
+                      else{
+                        listaActiva.forEach((c,i)=>{
+                          const cuota=c.proxCuota?.valorCuotaEditado||c.valorCuota;
+                          const dias=c.diffDias===0?"vence hoy":c.diffDias>0?`en ${c.diffDias} día(s)`:`venció hace ${Math.abs(c.diffDias)} día(s)`;
+                          const tel=clients.find(cl=>cl.id===c.clienteId)?.tel||"";
+                          msg+=`${i+1}. *${c.clienteNombre}*\n   💵 Cuota: ${fmt(cuota)} · Saldo: ${fmt(c.saldoPendiente)}\n   📆 ${c.frecuencia} · ${dias}${tel?`\n   📱 ${tel}`:""}\n\n`;
+                        });
+                        const totalSaldo=listaActiva.reduce((s,c)=>s+(c.saldoPendiente||0),0);
+                        const totalCuotas=listaActiva.reduce((s,c)=>s+(c.proxCuota?.valorCuotaEditado||c.valorCuota||0),0);
+                        msg+=`━━━━━━━━━━━━\n📊 *TOTALES*\n👥 ${listaActiva.length} cliente(s)\n💰 A cobrar: ${fmt(totalCuotas)}\n📌 Saldo total: ${fmt(totalSaldo)}`;
+                      }
+                      const num=waResumenTel.replace(/\D/g,"");
+                      window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,"_blank");
+                      setShowWaResumen(false);
+                    }} style={{background:"#25D366",color:"#fff",border:"none",borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>Enviar</button>
+                    <button onClick={()=>setShowWaResumen(false)} style={{background:"none",border:`1px solid ${t.border}`,borderRadius:8,padding:"7px 9px",fontSize:12,cursor:"pointer",color:t.sub}}>✕</button>
+                  </>
+                ):(
+                  <button onClick={()=>setShowWaResumen(true)}
+                    style={{display:"flex",alignItems:"center",gap:6,background:"#25D366",color:"#fff",border:"none",borderRadius:8,padding:"8px 14px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                    <Icon name="whatsapp" size={15}/>Enviar resumen
+                  </button>
+                )}
+              </div>
+            </div>
             <div style={{display:"flex",gap:0,borderBottom:`1px solid ${t.border}`}}>
               {tabsConfig.map(tab=>(
                 <button key={tab.id} onClick={()=>setTabPagos(tab.id)}

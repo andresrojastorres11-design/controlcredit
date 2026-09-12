@@ -3318,6 +3318,108 @@ const Historial=({creditos,productos,ventasContado=[],clients,t})=>{
   );
 };
 
+// ── PANEL DE NOTAS — solo créditos/ventas activos con notas ──────────────────
+const PanelNotas=({creditos,productos,clients,setCreditos,setProductos,t})=>{
+  const [busq,setBusq]=useState("");
+  const [notasItem,setNotasItem]=useState(null);
+
+  // Recolectar créditos y ventas ACTIVOS que tengan al menos 1 nota
+  const itemsConNotas=[];
+  creditos.filter(c=>c.estado!=="Finalizado").forEach(c=>{
+    const notas=parseNotasOp(c.comentarios);
+    if(notas.length>0)itemsConNotas.push({...c,_tipo:"credito",_notas:notas,_ultimaNota:notas[0]});
+  });
+  productos.filter(p=>p.estado!=="Finalizado").forEach(p=>{
+    const notas=parseNotasOp(p.comentarios);
+    if(notas.length>0)itemsConNotas.push({...p,_tipo:"producto",_notas:notas,_ultimaNota:notas[0]});
+  });
+
+  // Ordenar por nota más reciente primero
+  const parseFechaNota=(f)=>{
+    if(!f)return 0;
+    const [dp,hp]=f.split(" ");
+    if(!dp)return 0;
+    const [d,m,a]=dp.split("/");
+    return new Date(`${a}-${m}-${d}T${hp||"00:00"}`).getTime()||0;
+  };
+  itemsConNotas.sort((a,b)=>parseFechaNota(b._ultimaNota?.fecha)-parseFechaNota(a._ultimaNota?.fecha));
+
+  const filtrados=itemsConNotas.filter(it=>{
+    const q=busq.toLowerCase();
+    if(!q)return true;
+    return it.clienteNombre.toLowerCase().includes(q)||it._notas.some(n=>n.texto.toLowerCase().includes(q));
+  });
+
+  const tabla=notasItem?._tipo==="producto"?"productos":"creditos";
+  const onSaved=(id,json)=>{
+    if(notasItem?._tipo==="producto")setProductos(ps=>ps.map(x=>x.id===id?{...x,comentarios:json}:x));
+    else setCreditos(cs=>cs.map(x=>x.id===id?{...x,comentarios:json}:x));
+  };
+
+  return(
+    <div>
+      <div style={{marginBottom:22}}>
+        <h1 style={{fontSize:22,fontWeight:800,color:t.text,margin:"0 0 4px"}}>📝 Notas</h1>
+        <p style={{color:t.sub,margin:0,fontSize:13}}>Créditos y ventas activos con notas · {itemsConNotas.length} en total</p>
+      </div>
+
+      <div style={{position:"relative",marginBottom:18,maxWidth:420}}>
+        <input value={busq} onChange={e=>setBusq(e.target.value)} placeholder="Buscar por cliente o texto de la nota..."
+          style={{width:"100%",padding:"10px 14px 10px 40px",borderRadius:10,border:`1px solid ${t.border}`,background:t.card,color:t.text,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+        <span style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",color:t.sub}}><Icon name="search" size={16}/></span>
+      </div>
+
+      {filtrados.length===0?(
+        <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"50px 20px",textAlign:"center"}}>
+          <div style={{fontSize:44,marginBottom:12}}>📋</div>
+          <div style={{fontSize:15,fontWeight:700,color:t.text,marginBottom:4}}>{busq?"Sin resultados":"Sin notas todavía"}</div>
+          <div style={{fontSize:13,color:t.sub}}>{busq?"Probá con otra búsqueda":"Las notas que dejes en créditos o ventas activas van a aparecer acá"}</div>
+        </div>
+      ):(
+        <div style={{display:"grid",gap:10}}>
+          {filtrados.map(it=>{
+            const clienteInfo=clients.find(cl=>cl.id===it.clienteId);
+            return(
+              <div key={`${it._tipo}-${it.id}`} onClick={()=>setNotasItem(it)}
+                style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"16px 18px",cursor:"pointer",transition:"border-color 0.15s"}}
+                onMouseEnter={e=>e.currentTarget.style.borderColor=t.accent}
+                onMouseLeave={e=>e.currentTarget.style.borderColor=t.border}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,marginBottom:8,flexWrap:"wrap"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                    <span style={{fontSize:15,fontWeight:700,color:t.text}}>{it.clienteNombre}</span>
+                    {it._tipo==="producto"
+                      ?<span style={{fontSize:10,background:"#8b5cf6",color:"#fff",borderRadius:20,padding:"2px 8px",fontWeight:700}}>🛒 {it.producto}</span>
+                      :<span style={{fontSize:10,background:"#3b82f6",color:"#fff",borderRadius:20,padding:"2px 8px",fontWeight:700}}>💳 Crédito</span>}
+                    <span style={{fontSize:10,background:"#f59e0b",color:"#fff",borderRadius:20,padding:"2px 8px",fontWeight:700}}>{it._notas.length} nota{it._notas.length!==1?"s":""}</span>
+                  </div>
+                  {clienteInfo?.tel&&(
+                    <a href={`https://wa.me/54${clienteInfo.tel.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()}
+                      style={{display:"flex",alignItems:"center",gap:5,background:"#25D366",color:"#fff",borderRadius:8,padding:"5px 10px",fontSize:11,fontWeight:700,textDecoration:"none",flexShrink:0}}>
+                      <Icon name="whatsapp" size={12}/>WA
+                    </a>
+                  )}
+                </div>
+                <div style={{background:"#f59e0b12",borderLeft:"3px solid #f59e0b",borderRadius:6,padding:"9px 12px",marginBottom:8}}>
+                  <div style={{fontSize:13,color:t.text,lineHeight:1.4}}>{it._ultimaNota.texto}</div>
+                  {it._ultimaNota.fecha&&<div style={{fontSize:10,color:t.sub,marginTop:4,fontWeight:600}}>🕐 {it._ultimaNota.fecha}</div>}
+                </div>
+                <div style={{display:"flex",gap:14,flexWrap:"wrap",fontSize:11,color:t.sub}}>
+                  <span>Saldo: <strong style={{color:t.text}}>{fmt(it.saldoPendiente)}</strong></span>
+                  <span>{it.cuotasPagadas}/{it.cuotas} cuotas</span>
+                  <span>{it.frecuencia}</span>
+                  <span style={{color:t.accent,fontWeight:700}}>Ver todas las notas →</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <ModalNotas open={!!notasItem} onClose={()=>setNotasItem(null)} item={notasItem} tabla={tabla} onSaved={onSaved} t={t}/>
+    </div>
+  );
+};
+
 const Cartera=({creditos,productos,clients,t})=>{
   const creditosActivos=creditos.filter(c=>c.estado!=="Finalizado");
   const plata=creditosActivos.reduce((s,c)=>s+(c.monto-c.monto*(c.cuotasPagadas/c.cuotas)),0);
@@ -3903,6 +4005,7 @@ export default function App(){
     {id:"productos",label:"Productos",icon:"productos"},
     {id:"cartera",label:"Cartera",icon:"cartera"},
     {id:"historial",label:"Historial",icon:"calendar"},
+    {id:"notas",label:"Notas",icon:"edit"},
     {id:"alertas",label:"Alertas",icon:"alert"},
     {id:"presupuesto",label:"Presupuesto",icon:"coin"},
     ...(esAdmin?[{id:"usuarios",label:"Usuarios",icon:"users"}]:[]),
@@ -4133,6 +4236,7 @@ export default function App(){
           {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} creditos={creditos} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
           {screen==="cartera"&&<Cartera creditos={creditos} productos={productos} clients={clients} t={t}/>}
           {screen==="historial"&&<Historial creditos={creditos} productos={productos} ventasContado={ventasContado} clients={clients} t={t}/>}
+          {screen==="notas"&&<PanelNotas creditos={creditos} productos={productos} clients={clients} setCreditos={setCreditos} setProductos={setProductos} t={t}/>}
           {screen==="alertas"&&<Alertas creditos={creditos} clients={clients} t={t}/>}
           {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t} allClients={allClients} allCreditos={allCreditos} allProductos={allProductos} allVentasContado={allVentasContado}/>}
           {screen==="presupuesto"&&<Presupuesto t={t}/>}
@@ -4201,6 +4305,7 @@ export default function App(){
               <div style={{width:"100%",height:1,background:"#ffffff20",margin:"4px 0"}}/>
               {[
                 {label:"Historial",icon:"📅",action:()=>{setScreen("historial");setFabOpen(false);}},
+                {label:"Notas",icon:"📝",action:()=>{setScreen("notas");setFabOpen(false);}},
                 {label:"Presupuesto",icon:"🧮",action:()=>{setScreen("presupuesto");setFabOpen(false);}},
                 {label:"Cartera",icon:"💼",action:()=>{setScreen("cartera");setFabOpen(false);}},
                 {label:"Papelera",icon:"🗑",action:()=>{setScreen("papelera");setFabOpen(false);}},
@@ -4314,6 +4419,7 @@ export default function App(){
           {screen==="productos"&&<Productos productos={productos} setProductos={setProductos} ventasContado={ventasContado} setVentasContado={setVentasContado} clients={clients} creditos={creditos} usuarioActual={usuarioActual} soloVer={soloVer} t={t}/>}
           {screen==="cartera"&&<Cartera creditos={creditos} productos={productos} clients={clients} t={t}/>}
           {screen==="historial"&&<Historial creditos={creditos} productos={productos} ventasContado={ventasContado} clients={clients} t={t}/>}
+          {screen==="notas"&&<PanelNotas creditos={creditos} productos={productos} clients={clients} setCreditos={setCreditos} setProductos={setProductos} t={t}/>}
           {screen==="alertas"&&<Alertas creditos={creditos} clients={clients} t={t}/>}
           {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t} allClients={allClients} allCreditos={allCreditos} allProductos={allProductos} allVentasContado={allVentasContado}/>}
           {screen==="presupuesto"&&<Presupuesto t={t}/>}

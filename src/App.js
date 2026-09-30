@@ -2313,18 +2313,46 @@ const ResumenClienteSel=({clienteId,creditos=[],productos=[],t})=>{
   const cid=+clienteId;
   const credAct=creditos.filter(c=>c.clienteId===cid&&c.estado!=="Finalizado");
   const prodAct=productos.filter(p=>p.clienteId===cid&&p.estado!=="Finalizado");
-  const credFin=creditos.filter(c=>c.clienteId===cid&&c.estado==="Finalizado").length;
-  const prodFin=productos.filter(p=>p.clienteId===cid&&p.estado==="Finalizado").length;
+  const credFinArr=creditos.filter(c=>c.clienteId===cid&&c.estado==="Finalizado");
+  const prodFinArr=productos.filter(p=>p.clienteId===cid&&p.estado==="Finalizado");
+  const credFin=credFinArr.length;
+  const prodFin=prodFinArr.length;
 
-  // Sin operaciones activas → cliente limpio
+  // Detecta si una operación finalizada tuvo algún atraso en su momento:
+  // cuota pagada después de su vencimiento, o mora aplicada en alguna cuota.
+  const tuvoAtraso=(op)=>{
+    const cuotas=op.detalleCuotas||[];
+    const pagoTarde=cuotas.some(d=>d.fechaPago&&d.fechaVenc&&new Date(d.fechaPago)>new Date(d.fechaVenc));
+    const tuvoMora=cuotas.some(d=>d.valorCuotaEditado&&d.valorCuotaEditado>(op.valorCuota||0));
+    const flagHist=(op.historial||[]).some(h=>h.tipo==="atraso"||h.tipo==="moroso");
+    return pagoTarde||tuvoMora||flagHist;
+  };
+
+  // Sin operaciones activas → revisar historial finalizado antes de decir "limpio"
   if(credAct.length===0&&prodAct.length===0){
+    const finalizadas=[...credFinArr,...prodFinArr];
+    const atrasadas=finalizadas.filter(tuvoAtraso).length;
+    const totalFin=credFin+prodFin;
+    if(atrasadas>0){
+      return(
+        <div style={{background:"#f59e0b12",border:"1px solid #f59e0b35",borderRadius:10,padding:"11px 14px",marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:18}}>⚠️</span>
+          <div>
+            <div style={{fontSize:12,fontWeight:700,color:"#f59e0b"}}>Sin deudas activas, pero con antecedentes de atraso</div>
+            <div style={{fontSize:11,color:t.sub,marginTop:1}}>
+              {totalFin} crédito{totalFin!==1?"s":""} finalizado{totalFin!==1?"s":""} · {atrasadas} se atrasó{atrasadas!==1?"ron":""} en su momento
+            </div>
+          </div>
+        </div>
+      );
+    }
     return(
       <div style={{background:"#10b98112",border:"1px solid #10b98130",borderRadius:10,padding:"11px 14px",marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
         <span style={{fontSize:18}}>✅</span>
         <div>
           <div style={{fontSize:12,fontWeight:700,color:"#10b981"}}>Cliente sin deudas activas</div>
           <div style={{fontSize:11,color:t.sub,marginTop:1}}>
-            {credFin+prodFin>0?`Historial: ${credFin+prodFin} operación${credFin+prodFin!==1?"es":""} finalizada${credFin+prodFin!==1?"s":""} ✓`:"Primera operación con este cliente"}
+            {totalFin>0?`Historial: ${totalFin} operación${totalFin!==1?"es":""} finalizada${totalFin!==1?"s":""}, todas al día ✓`:"Primera operación con este cliente"}
           </div>
         </div>
       </div>

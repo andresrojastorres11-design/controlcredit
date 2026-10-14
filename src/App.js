@@ -540,7 +540,7 @@ const backupPorEmail=(creditos,clientes,productos,ventasContado,emailDestino)=>{
 
   // ── HOJA 6: RESUMEN ── (mismo cálculo que el Dashboard: créditos + ventas financiadas)
   const totalPendienteCred=activos.reduce((s,c)=>s+c.saldoPendiente,0);
-  const totalPendienteProd=prodActivos.reduce((s,p)=>s+Math.max(0,p.precioFinanciado-p.saldoCobrado),0);
+  const totalPendienteProd=prodActivos.reduce((s,p)=>s+(p.saldoPendiente||0),0);
   const totalPendiente=totalPendienteCred+totalPendienteProd;
   // Ganancia realizada = de créditos + de ventas financiadas
   const gananciaRealCred=creditos.reduce((s,c)=>s+(c.ganancia/c.cuotas)*c.cuotasPagadas,0);
@@ -1462,6 +1462,147 @@ const AdminUsuarios=({t,allClients,allCreditos,allProductos,allVentasContado})=>
     </div>
   );
 };
+// ── REPROGRAMAR COBRO (fecha y/o monto de la próxima cuota + nota) ───────────
+const isoLocal=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+
+// Chip que recuerda en la fila/tarjeta que esa cuota fue ajustada
+const ChipCobroAjustado=({cuota,valorBase,t})=>{
+  if(!cuota)return null;
+  const v=cuota.valorCuotaEditado;
+  const tieneMonto=!!v&&v!==valorBase;
+  if(!cuota.reprogramada&&!tieneMonto&&!cuota.notaCobro)return null;
+  const dif=tieneMonto?v-valorBase:0;
+  return(
+    <div style={{marginTop:5,display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+      {cuota.reprogramada&&<span style={{fontSize:10,background:"#3b82f620",color:"#3b82f6",borderRadius:20,padding:"1px 8px",fontWeight:700}}>📅 Reprogramada{cuota.fechaOriginal?` (era ${fmtFecha(cuota.fechaOriginal)})`:""}</span>}
+      {tieneMonto&&<span style={{fontSize:10,background:dif>0?"#f59e0b20":"#8b5cf620",color:dif>0?"#f59e0b":"#8b5cf6",borderRadius:20,padding:"1px 8px",fontWeight:700}}>{dif>0?"Cobrar +":"Descuento −"}{fmt(Math.abs(dif))}</span>}
+      {cuota.notaCobro&&<span style={{fontSize:11,color:t.sub,fontStyle:"italic"}}>“{cuota.notaCobro.length>70?cuota.notaCobro.slice(0,70)+"…":cuota.notaCobro}”</span>}
+    </div>
+  );
+};
+
+const ModalReprogramar=({item,onClose,setCreditos,setProductos,t})=>{
+  const [fecha,setFecha]=React.useState("");
+  const [monto,setMonto]=React.useState("");
+  const [nota,setNota]=React.useState("");
+  const [saving,setSaving]=React.useState(false);
+  React.useEffect(()=>{
+    if(!item)return;
+    const det=item.detalleCuotas||[];
+    const c=det.find(d=>d===item.proxCuota)||det.find(d=>d.num===item.proxCuota?.num);
+    setFecha(c?.fechaVenc||"");
+    setMonto(String(c?.valorCuotaEditado||item.valorCuota||""));
+    setNota(c?.notaCobro||"");
+  },[item]);
+  if(!item)return null;
+
+  const det0=item.detalleCuotas||[];
+  const idx=Math.max(0,det0.findIndex(d=>d===item.proxCuota||d.num===item.proxCuota?.num));
+  const cuota=det0[idx];
+  if(!cuota)return null;
+  const valorBase=item.valorCuota||0;
+  const valorActual=cuota.valorCuotaEditado||valorBase;
+  const nv=+monto||0;
+  const difMonto=nv-valorActual;
+  const sumarDias=(n,mes)=>{
+    const d=parseFechaFlex(cuota.fechaVenc)||new Date();
+    if(mes)d.setMonth(d.getMonth()+n);else d.setDate(d.getDate()+n);
+    setFecha(isoLocal(d));
+  };
+
+  const guardar=async()=>{
+    if(!fecha){alert("Elegí una fecha");return;}
+    if(!(nv>0)){alert("El monto tiene que ser mayor a 0");return;}
+    if(nv<(cuota.montoPagado||0)){alert(`Esa cuota ya tiene ${fmt(cuota.montoPagado)} pagados; el monto no puede ser menor.`);return;}
+    const cambioF=fecha!==cuota.fechaVenc;
+    const cambioM=nv!==valorActual;
+    const textoNota=nota.trim();
+    if(!cambioF&&!cambioM&&textoNota===(cuota.notaCobro||"")){onClose();return;}
+    setSaving(true);
+    const hoyTxt=new Date().toLocaleDateString("es-AR");
+    const det=[...det0];
+    det[idx]={
+      ...cuota,fechaVenc:fecha,
+      ...(cambioM?{valorCuotaEditado:nv}:{}),
+      ...(cambioF?{fechaOriginal:cuota.fechaOriginal||cuota.fechaVenc,reprogramada:true}:{}),
+      ...(textoNota?{notaCobro:textoNota}:{}),
+    };
+    const base=item.valorCuota;
+    const totalCobrado=det.reduce((s,d)=>s+(d.montoPagado||0),0);
+    const nuevoTotal=det.reduce((s,d)=>s+(d.valorCuotaEditado||base),0);
+    const pendiente=det.reduce((sp,dp)=>sp+Math.max(0,(dp.valorCuotaEditado||base)-(dp.montoPagado||0)),0);
+    const prox=det.filter(d=>d.estado!=="Pagada").sort((a,b)=>new Date(a.fechaVenc)-new Date(b.fechaVenc))[0];
+    // Nota automática en la bitácora (se ve en Notas y en Cobros del día)
+    const partes=[`📅 Cuota ${cuota.num||idx+1}:`];
+    if(cambioF)partes.push(`fecha ${fmtFecha(cuota.fechaVenc)} → ${fmtFecha(fecha)}`);
+    if(cambioM)partes.push(`monto ${fmt(valorActual)} → ${fmt(nv)} (${difMonto>0?"+":"−"}${fmt(Math.abs(difMonto))})`);
+    let texto=partes.join(" ");
+    if(textoNota)texto+=`\n${textoNota}`;
+    const ahora=new Date();
+    const fechaNota=ahora.toLocaleDateString("es-AR")+" "+ahora.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
+    const notas=[{id:Date.now(),texto,fecha:fechaNota},...parseNotasOp(item.comentarios)];
+    const comentarios=JSON.stringify(notas);
+    const esProd=item._tipo==="producto";
+    const tabla=esProd?"productos":"creditos";
+    const upd={detalle_cuotas:det,saldo_pendiente:pendiente,proximo_pago:prox?.fechaVenc||"",comentarios};
+    let historial;
+    if(!esProd){
+      upd.total_cobrar=nuevoTotal;
+      historial=[...(item.historial||[]),{tipo:"reprogramacion_cobro",cuota:cuota.num||idx+1,fechaAnterior:cuota.fechaVenc,fechaNueva:fecha,valorAnterior:valorActual,valorNuevo:nv,fecha:hoyTxt}];
+      upd.historial=historial;
+    }
+    try{
+      if(navigator.onLine)await sb.from(tabla).update(upd).eq("id",item.id);
+      else await agregarACola({tipo:`update_${tabla.slice(0,-1)}`,id_registro:item.id,datos:upd});
+    }catch(e){}
+    const patch={detalleCuotas:det,saldoCobrado:totalCobrado,saldoPendiente:pendiente,proximoPago:prox?.fechaVenc||"",comentarios,...(esProd?{}:{totalCobrar:nuevoTotal,historial})};
+    if(esProd)setProductos(ps=>ps.map(x=>x.id===item.id?{...x,...patch}:x));
+    else setCreditos(cs=>cs.map(x=>x.id===item.id?{...x,...patch}:x));
+    setSaving(false);
+    onClose();
+  };
+
+  const inp={width:"100%",padding:"10px 12px",borderRadius:8,border:`1px solid ${t.inputBorder||t.border}`,background:t.input||t.bg,color:t.text,fontSize:16,outline:"none",boxSizing:"border-box",fontFamily:"inherit"};
+  const chip={background:"none",border:`1px solid ${t.border}`,color:t.sub,borderRadius:20,padding:"4px 10px",fontSize:11,fontWeight:600,cursor:"pointer"};
+  return(
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+      <div onClick={e=>e.stopPropagation()} className="cc-modal" style={{background:t.card,borderRadius:16,padding:"22px 24px",width:"94%",maxWidth:440,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(0,0,0,0.35)",border:`1px solid ${t.border}`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
+          <div>
+            <h3 style={{margin:"0 0 2px",fontSize:16,fontWeight:800,color:t.text}}>📅 Modificar cobro</h3>
+            <p style={{margin:0,fontSize:12,color:t.sub}}>{item.clienteNombre}{item.producto?` · ${item.producto}`:""} · cuota {cuota.num||idx+1}</p>
+          </div>
+          <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:t.sub,padding:4}}><Icon name="close" size={18}/></button>
+        </div>
+
+        <label style={{fontSize:11,fontWeight:700,color:t.sub,textTransform:"uppercase"}}>Nueva fecha de cobro</label>
+        <input type="date" value={fecha} onChange={e=>setFecha(e.target.value)} style={{...inp,margin:"5px 0 7px"}}/>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
+          <button style={chip} onClick={()=>sumarDias(1)}>+1 día</button>
+          <button style={chip} onClick={()=>sumarDias(7)}>+1 semana</button>
+          <button style={chip} onClick={()=>sumarDias(15)}>+15 días</button>
+          <button style={chip} onClick={()=>sumarDias(1,true)}>+1 mes</button>
+        </div>
+
+        <label style={{fontSize:11,fontWeight:700,color:t.sub,textTransform:"uppercase"}}>Monto a cobrar ese día</label>
+        <input type="number" inputMode="decimal" value={monto} onChange={e=>setMonto(e.target.value)} style={{...inp,margin:"5px 0 6px"}}/>
+        <div style={{fontSize:12,marginBottom:14,minHeight:18,color:difMonto>0?"#f59e0b":difMonto<0?"#8b5cf6":t.sub,fontWeight:700}}>
+          {difMonto===0?`Cuota actual: ${fmt(valorActual)} (sin cambios)`:difMonto>0?`+${fmt(difMonto)} de más (interés / mora)`:`−${fmt(Math.abs(difMonto))} de descuento`}
+        </div>
+
+        <label style={{fontSize:11,fontWeight:700,color:t.sub,textTransform:"uppercase"}}>Nota (opcional)</label>
+        <textarea value={nota} onChange={e=>setNota(e.target.value)} rows={3} placeholder="Ej: Cobrar el 20 con $5.000 extra por el atraso" style={{...inp,margin:"5px 0 16px",resize:"vertical"}}/>
+
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <button onClick={onClose} style={{padding:"10px 16px",borderRadius:8,border:`1px solid ${t.border}`,background:"none",color:t.sub,cursor:"pointer",fontSize:13,fontWeight:600}}>Cancelar</button>
+          <button onClick={guardar} disabled={saving} style={{padding:"10px 20px",borderRadius:8,border:"none",background:t.accent,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:700}}>{saving?"Guardando...":"Guardar"}</button>
+        </div>
+        <p style={{margin:"10px 0 0",fontSize:11,color:t.sub}}>Se guarda también como nota del crédito, así el monto y la fecha te aparecen en Cobros y en Notas.</p>
+      </div>
+    </div>
+  );
+};
+
 const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasContado=[],t})=>{
   const hoy=new Date();hoy.setHours(0,0,0,0);
   const [mesPDF,setMesPDF]=useState(hoy.getMonth()+1);
@@ -1473,6 +1614,7 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
   const [emailBackup,setEmailBackup]=useState("");
   const [showEmailInput,setShowEmailInput]=useState(false);
   const [showWaResumen,setShowWaResumen]=useState(false);
+  const [modifCobro,setModifCobro]=useState(null); // ítem cuya próxima cuota se está reprogramando
   const [waResumenTel,setWaResumenTel]=useState(()=>{try{return localStorage.getItem("cc_wa_resumen")||"";}catch{return "";}});
 
   const activos=creditos.filter(c=>c.estado!=="Finalizado");
@@ -1482,14 +1624,14 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
     +productosActivos.reduce((s,p)=>s+(p.inversion-(p.inversion*(p.cuotasPagadas/p.cuotas))),0);
   // Por cobrar = saldo pendiente créditos + saldo pendiente productos
   const porCobrar=activos.reduce((s,c)=>s+c.saldoPendiente,0)
-    +productosActivos.reduce((s,p)=>s+Math.max(0,p.precioFinanciado-p.saldoCobrado),0);
+    +productosActivos.reduce((s,p)=>s+(p.saldoPendiente||0),0);
   // Ganancia esperada = total a cobrar - capital prestado (incluye moras editadas)
   const ganEsp=creditos.reduce((s,c)=>{
     const totalReal=(c.detalleCuotas&&c.detalleCuotas.length>0)
       ?c.detalleCuotas.reduce((ss,d)=>ss+(d.valorCuotaEditado||c.valorCuota),0)
       :c.totalCobrar;
     return s+(totalReal-c.monto);
-  },0)+productos.reduce((s,p)=>s+p.ganancia,0);
+  },0)+productos.reduce((s,p)=>s+p.ganancia+(p.detalleCuotas||[]).reduce((ss,d)=>ss+(d.valorCuotaEditado?d.valorCuotaEditado-(p.valorCuota||0):0),0),0);
 
   // Ganancia realizada = lo efectivamente cobrado - capital recuperado
   // Así si cobraste $120 en vez de $100 (mora), impacta +$20 extra
@@ -1516,21 +1658,30 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
   const totalCobradoReal=creditos.reduce((s,c)=>s+c.saldoCobrado,0)
     +productos.reduce((s,p)=>s+p.saldoCobrado,0)
     +(ventasContado||[]).reduce((s,v)=>s+v.precio_venta,0);
-  // Total proyectado = suma de valores reales de cada cuota (con moras/descuentos aplicados)
-  const totalProyectadoCreditos=creditos.reduce((s,c)=>{
-    if(c.detalleCuotas&&c.detalleCuotas.length>0)
-      return s+c.detalleCuotas.reduce((ss,d)=>ss+(d.valorCuotaEditado||c.valorCuota),0);
-    return s+c.totalCobrar;
-  },0);
-  const totalPendienteReal=Math.max(0,totalProyectadoCreditos-creditos.reduce((s,c)=>s+c.saldoCobrado,0))
-    +productosActivos.reduce((s,p)=>s+Math.max(0,p.precioFinanciado-p.saldoCobrado),0);
+  // Pendiente = saldo de operaciones ACTIVAS (cada cuota con su valor real, incluyendo moras y descuentos).
+  // Las operaciones finalizadas/refinanciadas ya no cuentan, así no se duplica lo refinanciado.
+  const totalPendienteReal=porCobrar;
   const flujoTotal=totalCobradoReal+totalPendienteReal;
   const capitalRecuperadoTotal=creditos.reduce((s,c)=>s+(c.monto/c.cuotas)*c.cuotasPagadas,0);
-  const interesesCobrados=Math.max(0,creditos.reduce((s,c)=>s+c.saldoCobrado,0)-capitalRecuperadoTotal);
-  const morasCobradas=creditos.reduce((s,c)=>{
-    const det=c.detalleCuotas||[];
-    return s+det.reduce((ss,d)=>{const extra=(d.valorCuotaEditado||0)-(c.valorCuota||0);return ss+(extra>0&&d.estado==="Pagada"?extra:0);},0);
-  },0);
+  const capitalRecuperadoProd=productos.reduce((s,p)=>s+(p.inversion/(p.cuotas||1))*p.cuotasPagadas,0);
+  const interesesCobrados=Math.max(0,creditos.reduce((s,c)=>s+c.saldoCobrado,0)-capitalRecuperadoTotal)
+    +Math.max(0,productos.reduce((s,p)=>s+p.saldoCobrado,0)-capitalRecuperadoProd);
+  // Ajustes de cuotas (créditos + ventas financiadas):
+  // moras cobradas / por cobrar (monto de más), descuentos otorgados y cobros reprogramados
+  let morasCobradas=0,morasPorCobrar=0,descuentosOtorgados=0,cuotasConExtra=0,cobrosReprogramados=0;
+  [...creditos,...productos].forEach(o=>{
+    const act=o.estado!=="Finalizado";
+    const base=o.valorCuota||0;
+    (o.detalleCuotas||[]).forEach(d=>{
+      if(act&&d.reprogramada&&d.estado!=="Pagada")cobrosReprogramados++;
+      if(!d.valorCuotaEditado)return;
+      const dif=d.valorCuotaEditado-base;
+      if(dif>0){
+        if(d.estado==="Pagada")morasCobradas+=dif;
+        else if(act){morasPorCobrar+=dif;cuotasConExtra++;}
+      }else if(dif<0&&(d.estado==="Pagada"||act))descuentosOtorgados+=-dif;
+    });
+  });
 
   // ── PAGOS: nueva lógica ──
   // Al día: vence hoy o hasta 3 días después (período de gracia)
@@ -1673,7 +1824,7 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
         };
 
         // ── RECAUDADO EN EL MES (cuotas efectivamente pagadas ese mes) ──
-        let recaudadoMes=0, capitalRecuperadoMes=0, gananciaMes=0, morasMes=0, cuotasCobradas=0;
+        let recaudadoMes=0, capitalRecuperadoMes=0, gananciaMes=0, morasMes=0, descuentosMes=0, cuotasCobradas=0;
         [...creditos,...productos].forEach(o=>{
           const esProd=o.inversion!==undefined;
           const capitalTotal=esProd?o.inversion:o.monto;
@@ -1686,6 +1837,7 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
               gananciaMes+=(d.montoPagado||0)-capitalPorCuota;
               const extra=(d.valorCuotaEditado||valorCuotaBase)-valorCuotaBase;
               if(extra>0)morasMes+=Math.min(extra,d.montoPagado||0);
+              else if(extra<0)descuentosMes+=-extra;
               cuotasCobradas++;
             }
           });
@@ -1773,6 +1925,14 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
                 </div>
               )}
 
+              {descuentosMes>0&&(
+                <div style={{background:"#8b5cf615",borderRadius:12,padding:"14px 18px",border:"1px solid #8b5cf630"}}>
+                  <div style={{fontSize:10,color:"#8b5cf6",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>🏷 Descuentos del mes</div>
+                  <div style={{fontSize:20,fontWeight:900,color:"#8b5cf6"}}>{fmt(descuentosMes)}</div>
+                  <div style={{fontSize:11,color:t.sub,marginTop:2}}>Cuotas cobradas por menos</div>
+                </div>
+              )}
+
               <div style={{background:t.bg,borderRadius:12,padding:"14px 18px",border:`1px solid ${t.border}`}}>
                 <div style={{fontSize:10,color:t.sub,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>👥 Clientes nuevos</div>
                 <div style={{fontSize:20,fontWeight:900,color:t.text}}>{clientesNuevosMes}</div>
@@ -1820,12 +1980,29 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
               <div style={{fontSize:20,fontWeight:900,color:"#f59e0b"}}>{fmt(morasCobradas)}</div>
               <div style={{fontSize:11,color:t.sub,marginTop:2}}>Intereses por atrasos</div>
             </div>}
+            {morasPorCobrar>0&&<div style={{background:"#f9731618",borderRadius:12,padding:"14px 18px",border:"1px solid #f9731630"}}>
+              <div style={{fontSize:10,color:"#f97316",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Extras por cobrar</div>
+              <div style={{fontSize:20,fontWeight:900,color:"#f97316"}}>{fmt(morasPorCobrar)}</div>
+              <div style={{fontSize:11,color:t.sub,marginTop:2}}>{cuotasConExtra} cuota{cuotasConExtra!==1?"s":""} con monto aumentado</div>
+            </div>}
+            {descuentosOtorgados>0&&<div style={{background:"#8b5cf618",borderRadius:12,padding:"14px 18px",border:"1px solid #8b5cf630"}}>
+              <div style={{fontSize:10,color:"#8b5cf6",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Descuentos otorgados</div>
+              <div style={{fontSize:20,fontWeight:900,color:"#8b5cf6"}}>{fmt(descuentosOtorgados)}</div>
+              <div style={{fontSize:11,color:t.sub,marginTop:2}}>Plata que dejaste de cobrar</div>
+            </div>}
+            {cobrosReprogramados>0&&<div style={{background:"#3b82f618",borderRadius:12,padding:"14px 18px",border:"1px solid #3b82f630"}}>
+              <div style={{fontSize:10,color:"#3b82f6",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Cobros reprogramados</div>
+              <div style={{fontSize:20,fontWeight:900,color:"#3b82f6"}}>{cobrosReprogramados}</div>
+              <div style={{fontSize:11,color:t.sub,marginTop:2}}>Con fecha modificada, pendientes</div>
+            </div>}
           </div>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:12,color:t.sub,fontWeight:600}}>Progreso de cobro</span><span style={{fontSize:13,fontWeight:800,color:t.text}}>{flujoTotal>0?Math.round((totalCobradoReal/flujoTotal)*100):0}%</span></div>
           <div style={{height:10,borderRadius:5,background:t.border,overflow:"hidden"}}><div style={{width:`${flujoTotal>0?(totalCobradoReal/flujoTotal)*100:0}%`,height:"100%",background:"linear-gradient(90deg,#3b82f6,#10b981)",borderRadius:5}}/></div>
           <div style={{display:"flex",justifyContent:"space-between",marginTop:4,fontSize:11,color:t.sub}}><span>Cobrado: {fmt(totalCobradoReal)}</span><span>Pendiente: {fmt(totalPendienteReal)}</span></div>
         </div>
       )}
+
+      <ModalReprogramar item={modifCobro} onClose={()=>setModifCobro(null)} setCreditos={setCreditos} setProductos={setProductos} t={t}/>
 
       {/* PANEL HISTORIAL DE COBROS */}
       {showCobros&&(
@@ -2032,6 +2209,7 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
                               <span>{c.frecuencia}</span>
                               <span style={{fontWeight:700,color:tabActiva.color}}>{diffLabel}</span>
                             </div>
+                            <ChipCobroAjustado cuota={c.proxCuota} valorBase={c.valorCuota} t={t}/>
                           </div>
                         </div>
                         <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -2040,7 +2218,8 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
                             e.stopPropagation();
                             if(!window.confirm(`¿Marcar cuota de ${fmt(c.proxCuota?.valorCuotaEditado||c.valorCuota)} como pagada?`))return;
                             const det=[...(c.detalleCuotas||[])];
-                            const idx=det.findIndex(d=>d.estado==="Pendiente"||d.estado==="Parcial");
+                            let idx=det.indexOf(c.proxCuota);
+                            if(idx===-1)idx=det.findIndex(d=>d.estado==="Pendiente"||d.estado==="Parcial");
                             if(idx===-1)return;
                             const vc=det[idx].valorCuotaEditado||c.valorCuota;
                             det[idx]={...det[idx],montoPagado:vc,estado:"Pagada",fechaPago:new Date().toLocaleDateString("es-AR")};
@@ -2059,13 +2238,17 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
                             } else {
                               setCreditos(cs=>cs.map(x=>x.id===c.id?{...x,cuotasPagadas:pagadas,saldoCobrado:totalCobrado,saldoPendiente:pendiente,proximoPago:prox?.fechaVenc||"",estado:nuevoEstado,detalleCuotas:det}:x));
                             }
-                          }} style={{background:"#10b981",color:"#fff",border:"none",borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
+                          }} style={{background:"#10b981",color:"#fff",border:"none",borderRadius:6,padding:"4px 9px",fontSize:11,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4,minHeight:0}}>
                             ✓ Cobrado
+                          </button>
+                          <button title="Modificar fecha / monto de cobro" onClick={e=>{e.stopPropagation();setModifCobro(c);}}
+                            style={{background:(c.proxCuota?.reprogramada||c.proxCuota?.notaCobro)?"#3b82f6":"none",color:(c.proxCuota?.reprogramada||c.proxCuota?.notaCobro)?"#fff":t.sub,border:`1px solid ${(c.proxCuota?.reprogramada||c.proxCuota?.notaCobro)?"#3b82f6":t.border}`,borderRadius:6,padding:"4px 8px",fontSize:12,fontWeight:700,cursor:"pointer",minHeight:0}}>
+                            📅
                           </button>
                           {clienteInfo?.tel&&(
                             <button onClick={e=>abrirMensaje(c,clienteInfo,e)}
-                              style={{display:"flex",alignItems:"center",gap:5,background:"#25D366",color:"#fff",borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer"}}>
-                              <Icon name="whatsapp" size={13}/>{mensajeEditando===c.clienteId?"Cerrar":"WA"}
+                              style={{display:"flex",alignItems:"center",gap:4,background:"#25D366",color:"#fff",borderRadius:6,padding:"4px 8px",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",minHeight:0}}>
+                              <Icon name="whatsapp" size={12}/>{mensajeEditando===c.clienteId?"Cerrar":"WA"}
                             </button>
                           )}
                           <div style={{color:t.sub,fontSize:11,textAlign:"right"}}>
@@ -2133,7 +2316,6 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
 
           </div>
         </div>
-      )}
 
       {/* ── PROYECCIÓN FUTURA 6 MESES ── */}
       {(creditos.length>0||productos.length>0)&&(()=>{
@@ -3857,7 +4039,7 @@ const Papelera=({setCreditos,setProductos,t})=>{
 // ── APP ROOT ──────────────────────────────────────────────────────────────────
 // ── APP ROOT ──────────────────────────────────────────────────────────────────
 // ── TARJETA COBRO MÓVIL ───────────────────────────────────────────────────────
-const TarjetaCobro=({c,colorBorde,clients,t,onCobrar,onNotas})=>{
+const TarjetaCobro=({c,colorBorde,clients,t,onCobrar,onNotas,onReprogramar})=>{
   const clienteInfo=clients.find(cl=>cl.id===c.clienteId);
   const diffLabel=c.diff===0?"HOY":c.diff===-1?"Ayer":c.diff>0?`En ${c.diff}d`:`Hace ${Math.abs(c.diff)}d`;
   const colDiff=c.diff===0?"#10b981":c.diff>0?"#3b82f6":"#ef4444";
@@ -3876,6 +4058,7 @@ const TarjetaCobro=({c,colorBorde,clients,t,onCobrar,onNotas})=>{
           <span style={{fontSize:12,fontWeight:700,color:colDiff,background:`${colDiff}15`,padding:"2px 8px",borderRadius:20}}>{diffLabel}</span>
           <span style={{fontSize:11,color:t.sub}}>{c.cuotasPagadas}/{c.cuotas} cuotas</span>
         </div>
+        <ChipCobroAjustado cuota={c.proxCuota} valorBase={c.valorCuota} t={t}/>
         {/* Última nota visible en la tarjeta */}
         {nNotas>0&&(()=>{const ult=parseNotasOp(c.comentarios)[0];return(
           <div style={{marginTop:8,background:"#f59e0b12",borderLeft:"3px solid #f59e0b",borderRadius:6,padding:"7px 10px"}}>
@@ -3888,6 +4071,10 @@ const TarjetaCobro=({c,colorBorde,clients,t,onCobrar,onNotas})=>{
         <button onClick={()=>onCobrar(c)}
           style={{flex:1,background:"#10b981",color:"#fff",border:"none",borderRadius:10,padding:"12px",fontWeight:800,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
           ✓ Cobrado
+        </button>
+        <button onClick={()=>onReprogramar&&onReprogramar(c)} title="Modificar fecha / monto"
+          style={{background:(c.proxCuota?.reprogramada||c.proxCuota?.notaCobro)?"#3b82f6":t.bg,color:(c.proxCuota?.reprogramada||c.proxCuota?.notaCobro)?"#fff":t.sub,border:`1px solid ${(c.proxCuota?.reprogramada||c.proxCuota?.notaCobro)?"#3b82f6":t.border}`,borderRadius:10,padding:"12px 14px",fontWeight:700,fontSize:14,cursor:"pointer"}}>
+          📅
         </button>
         <button onClick={()=>onNotas(c)}
           style={{background:nNotas>0?"#f59e0b":t.bg,color:nNotas>0?"#fff":t.sub,border:`1px solid ${nNotas>0?"#f59e0b":t.border}`,borderRadius:10,padding:"12px 14px",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
@@ -3911,6 +4098,7 @@ export default function App(){
   const [fabOpen,setFabOpen]=useState(false);
   const [fabModal,setFabModal]=useState(null);
   const [filtroCobros,setFiltroCobros]=useState("todos"); // todos|vencidos|hoy|proximos
+  const [modifCobroMob,setModifCobroMob]=useState(null);
   const [notasCobro,setNotasCobro]=useState(null); // ítem cuyas notas se están viendo en Cobros del día
   const [mostrarBienvenida,setMostrarBienvenida]=useState(false);
   const [allClients,setAllClients]=useState([]);
@@ -4236,7 +4424,8 @@ export default function App(){
     const marcarCobradoMob=async(c)=>{
       if(!window.confirm(`¿Marcar cuota de ${fmt(c.proxCuota?.valorCuotaEditado||c.valorCuota)} como pagada?`))return;
       const det=[...(c.detalleCuotas||[])];
-      const idx=det.findIndex(d=>d.estado==="Pendiente"||d.estado==="Parcial");
+      let idx=det.indexOf(c.proxCuota);
+      if(idx===-1)idx=det.findIndex(d=>d.estado==="Pendiente"||d.estado==="Parcial");
       if(idx===-1)return;
       const vc=det[idx].valorCuotaEditado||c.valorCuota;
       det[idx]={...det[idx],montoPagado:vc,estado:"Pagada",fechaPago:new Date().toLocaleDateString("es-AR")};
@@ -4386,7 +4575,7 @@ export default function App(){
                     <span style={{width:8,height:8,borderRadius:"50%",background:"#ef4444",display:"inline-block"}}/>
                     VENCIDOS — {cobrosVencidos.length}
                   </div>
-                  {cobrosVencidos.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} clients={clients} t={t} onCobrar={marcarCobradoMob} onNotas={setNotasCobro} colorBorde="#ef4444"/>)}
+                  {cobrosVencidos.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} clients={clients} t={t} onCobrar={marcarCobradoMob} onNotas={setNotasCobro} onReprogramar={setModifCobroMob} colorBorde="#ef4444"/>)}
                 </div>
               )}
 
@@ -4396,7 +4585,7 @@ export default function App(){
                     <span style={{width:8,height:8,borderRadius:"50%",background:"#10b981",display:"inline-block"}}/>
                     VENCEN HOY — {cobrosHoy.length}
                   </div>
-                  {cobrosHoy.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} clients={clients} t={t} onCobrar={marcarCobradoMob} onNotas={setNotasCobro} colorBorde="#10b981"/>)}
+                  {cobrosHoy.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} clients={clients} t={t} onCobrar={marcarCobradoMob} onNotas={setNotasCobro} onReprogramar={setModifCobroMob} colorBorde="#10b981"/>)}
                 </div>
               )}
 
@@ -4406,7 +4595,7 @@ export default function App(){
                     <span style={{width:8,height:8,borderRadius:"50%",background:"#3b82f6",display:"inline-block"}}/>
                     PRÓXIMOS (1-3 DÍAS) — {cobrosMañana.length}
                   </div>
-                  {cobrosMañana.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} clients={clients} t={t} onCobrar={marcarCobradoMob} onNotas={setNotasCobro} colorBorde="#3b82f6"/>)}
+                  {cobrosMañana.map(c=><TarjetaCobro key={`${c._tipo}-${c.id}`} c={c} clients={clients} t={t} onCobrar={marcarCobradoMob} onNotas={setNotasCobro} onReprogramar={setModifCobroMob} colorBorde="#3b82f6"/>)}
                 </div>
               )}
 
@@ -4524,6 +4713,7 @@ export default function App(){
         )}
 
         {/* Modal de notas desde Cobros del día */}
+        <ModalReprogramar item={modifCobroMob} onClose={()=>setModifCobroMob(null)} setCreditos={setCreditos} setProductos={setProductos} t={t}/>
         <ModalNotas open={!!notasCobro} onClose={()=>setNotasCobro(null)} item={notasCobro} tabla={notasCobro?._tipo==="producto"?"productos":"creditos"}
           onSaved={(id,json)=>{
             if(notasCobro?._tipo==="producto")setProductos(ps=>ps.map(x=>x.id===id?{...x,comentarios:json}:x));

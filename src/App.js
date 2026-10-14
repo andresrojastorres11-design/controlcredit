@@ -941,6 +941,161 @@ const TablaCuotas=({credito,onActualizar,t})=>{
 };
 
 // ── PERFIL CLIENTE ────────────────────────────────────────────────────────────
+// ── PERFIL / CALIFICACIÓN DE CLIENTES ────────────────────────────────────────
+const parseFechaFlex=(f)=>{
+  if(!f)return null;
+  if(String(f).includes("/")){const [d,m,y]=String(f).split("/").map(Number);return new Date(y,(m||1)-1,d||1);}
+  const [y,m,d]=String(f).slice(0,10).split("-").map(Number);
+  return new Date(y,(m||1)-1,d||1);
+};
+const PERFIL_COLORES={excelente:"#10b981",medio:"#f59e0b",riesgo:"#ef4444",nuevo:"#64748b"};
+const PERFIL_ETIQ={excelente:"Excelente",medio:"Medio",riesgo:"Riesgo",nuevo:"Nuevo"};
+const PERFIL_ICONO={excelente:"🟢",medio:"🟡",riesgo:"🔴",nuevo:"⚪"};
+
+// Puntual = cuota pagada con hasta 2 días de tolerancia. Se evalúan cuotas pagadas
+// y cuotas vencidas sin pagar de operaciones activas.
+const calcPerfilCliente=(cid,creditos=[],productos=[])=>{
+  const hoy=new Date();hoy.setHours(0,0,0,0);
+  const ops=[
+    ...creditos.filter(c=>c.clienteId===cid).map(o=>({o,monto:o.monto||0})),
+    ...productos.filter(p=>p.clienteId===cid).map(o=>({o,monto:o.inversion||0})),
+  ];
+  let evaluadas=0,puntuales=0,tardes=0,vencidasAct=0,maxDiasAtraso=0,maxDiasActual=0;
+  let montoMax=0,opsFin=0,opsAct=0,opsConAtraso=0;
+  ops.forEach(({o,monto})=>{
+    montoMax=Math.max(montoMax,monto);
+    const fin=o.estado==="Finalizado";
+    if(fin)opsFin++;else opsAct++;
+    let atraso=false;
+    (o.detalleCuotas||[]).forEach(d=>{
+      const venc=parseFechaFlex(d.fechaVenc);
+      if(!venc)return;
+      if(d.estado==="Pagada"){
+        evaluadas++;
+        const pago=parseFechaFlex(d.fechaPago);
+        let dias=pago?Math.round((pago-venc)/864e5):0;
+        if(!pago&&d.valorCuotaEditado&&d.valorCuotaEditado>(o.valorCuota||0))dias=3;
+        if(dias<=2)puntuales++;
+        else{tardes++;atraso=true;maxDiasAtraso=Math.max(maxDiasAtraso,dias);}
+      }else if(!fin&&venc<hoy){
+        evaluadas++;tardes++;vencidasAct++;atraso=true;
+        const dias=Math.round((hoy-venc)/864e5);
+        maxDiasActual=Math.max(maxDiasActual,dias);
+        maxDiasAtraso=Math.max(maxDiasAtraso,dias);
+      }
+    });
+    if(atraso)opsConAtraso++;
+  });
+  const pct=evaluadas>0?Math.round((puntuales/evaluadas)*100):null;
+  let nivel;
+  if(evaluadas<3)nivel="nuevo";
+  else if(pct>=90&&vencidasAct===0)nivel="excelente";
+  else if(pct>=70&&maxDiasActual<=15)nivel="medio";
+  else nivel="riesgo";
+  const redondeo=(n)=>Math.max(0,Math.round(n/5000)*5000);
+  const sug={
+    excelente:{txt:"Podés subirle el monto",ref:montoMax>0?redondeo(montoMax*1.25):0,refTxt:"hasta"},
+    medio:{txt:"Mantené el monto",ref:montoMax>0?redondeo(montoMax):0,refTxt:"hasta"},
+    riesgo:{txt:"Bajale el monto o pedí entrega",ref:montoMax>0?redondeo(montoMax*0.5):0,refTxt:"máx."},
+    nuevo:{txt:"Empezá con un monto bajo",ref:montoMax>0?redondeo(montoMax):0,refTxt:"hasta"},
+  }[nivel];
+  return{nivel,pct,evaluadas,puntuales,tardes,vencidasAct,maxDiasAtraso,maxDiasActual,montoMax,opsFin,opsAct,opsConAtraso,sug};
+};
+
+const BadgePerfil=({nivel,small})=>(
+  <span style={{fontSize:small?10:11,background:`${PERFIL_COLORES[nivel]}20`,color:PERFIL_COLORES[nivel],border:`1px solid ${PERFIL_COLORES[nivel]}50`,borderRadius:20,padding:small?"1px 8px":"2px 10px",fontWeight:800,whiteSpace:"nowrap"}}>
+    {PERFIL_ICONO[nivel]} {PERFIL_ETIQ[nivel]}
+  </span>
+);
+
+const PerfilMini=({clienteId,creditos,productos,t,margen})=>{
+  if(!clienteId)return null;
+  const p=calcPerfilCliente(+clienteId,creditos,productos);
+  const col=PERFIL_COLORES[p.nivel];
+  return(
+    <div style={{background:`${col}10`,border:`1px solid ${col}35`,borderRadius:10,padding:"11px 14px",marginTop:margen??0,marginBottom:14}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <span style={{fontSize:11,color:t.sub,fontWeight:700}}>Perfil del cliente</span>
+          <BadgePerfil nivel={p.nivel}/>
+          {p.pct!==null&&<span style={{fontSize:11,color:t.sub}}>{p.pct}% de cuotas puntuales ({p.puntuales}/{p.evaluadas})</span>}
+        </div>
+        <div style={{textAlign:"right"}}>
+          <div style={{fontSize:12,fontWeight:800,color:col}}>{p.sug.txt}</div>
+          {p.sug.ref>0&&<div style={{fontSize:10,color:t.sub}}>Referencia {p.sug.refTxt} {fmt(p.sug.ref)} (orientativo)</div>}
+        </div>
+      </div>
+      {(p.vencidasAct>0||p.maxDiasAtraso>2)&&(
+        <div style={{fontSize:11,color:t.sub,marginTop:6}}>
+          {p.vencidasAct>0&&<span>{p.vencidasAct} cuota{p.vencidasAct!==1?"s":""} vencida{p.vencidasAct!==1?"s":""} hoy · </span>}
+          {p.maxDiasAtraso>2&&<span>mayor atraso: {p.maxDiasAtraso} días · </span>}
+          <span>{p.opsConAtraso} de {p.opsFin+p.opsAct} operaciones con atrasos</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const PanelPerfiles=({clients,creditos,productos,t})=>{
+  const [filtro,setFiltro]=useState("todos");
+  const [busq,setBusq]=useState("");
+  const filas=clients.map(c=>({c,p:calcPerfilCliente(c.id,creditos,productos)}));
+  const orden={riesgo:0,medio:1,excelente:2,nuevo:3};
+  const cuenta=(n)=>filas.filter(f=>f.p.nivel===n).length;
+  const vis=filas
+    .filter(f=>filtro==="todos"||f.p.nivel===filtro)
+    .filter(f=>!busq||`${f.c.nombre} ${f.c.apellido}`.toLowerCase().includes(busq.toLowerCase())||String(f.c.dni||"").includes(busq))
+    .sort((a,b)=>orden[a.p.nivel]-orden[b.p.nivel]||(a.p.pct??101)-(b.p.pct??101));
+  const tabs=[["todos","Todos",filas.length,t.accent],["excelente","🟢 Excelentes",cuenta("excelente"),PERFIL_COLORES.excelente],["medio","🟡 Medios",cuenta("medio"),PERFIL_COLORES.medio],["riesgo","🔴 Riesgo",cuenta("riesgo"),PERFIL_COLORES.riesgo],["nuevo","⚪ Nuevos",cuenta("nuevo"),PERFIL_COLORES.nuevo]];
+  return(
+    <div>
+      <div style={{marginBottom:18}}>
+        <h1 style={{fontSize:22,fontWeight:800,color:t.text,margin:"0 0 4px"}}>⭐ Calificación de clientes</h1>
+        <p style={{color:t.sub,margin:0,fontSize:13}}>Según puntualidad real de pagos. Cuota puntual = pagada hasta 2 días después del vencimiento.</p>
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
+        {tabs.map(([id,lab,n,col])=>(
+          <button key={id} onClick={()=>setFiltro(id)} style={{background:filtro===id?col:t.card,color:filtro===id?"#fff":t.text,border:`1px solid ${filtro===id?col:t.border}`,borderRadius:20,padding:"8px 14px",fontSize:12,fontWeight:700,cursor:"pointer",minHeight:36}}>{lab} · {n}</button>
+        ))}
+      </div>
+      <div style={{position:"relative",marginBottom:16,maxWidth:420}}>
+        <input value={busq} onChange={e=>setBusq(e.target.value)} placeholder="Buscar cliente o DNI..." style={{width:"100%",padding:"10px 14px 10px 40px",borderRadius:10,border:`1px solid ${t.border}`,background:t.card,color:t.text,fontSize:16,outline:"none",boxSizing:"border-box"}}/>
+        <span style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",color:t.sub}}><Icon name="search" size={16}/></span>
+      </div>
+      {vis.length===0?(
+        <div style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,padding:"40px 20px",textAlign:"center",color:t.sub,fontSize:13}}>Sin clientes para mostrar</div>
+      ):(
+        <div style={{display:"grid",gap:10}}>
+          {vis.map(({c,p})=>{
+            const col=PERFIL_COLORES[p.nivel];
+            return(
+              <div key={c.id} style={{background:t.card,borderRadius:14,border:`1px solid ${t.border}`,borderLeft:`4px solid ${col}`,padding:"14px 16px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                    <span style={{fontSize:15,fontWeight:700,color:t.text}}>{c.nombre} {c.apellido}</span>
+                    <BadgePerfil nivel={p.nivel} small/>
+                  </div>
+                  {c.tel&&<a href={`https://wa.me/54${c.tel.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer" style={{background:"#25D366",color:"#fff",borderRadius:8,padding:"6px 10px",fontSize:11,fontWeight:700,textDecoration:"none"}}>WA</a>}
+                </div>
+                <div style={{display:"flex",gap:14,flexWrap:"wrap",fontSize:11,color:t.sub,marginBottom:8}}>
+                  <span>Puntualidad: <strong style={{color:col}}>{p.pct===null?"sin datos":`${p.pct}%`}</strong>{p.evaluadas>0&&` (${p.puntuales}/${p.evaluadas})`}</span>
+                  <span>Activas: <strong style={{color:t.text}}>{p.opsAct}</strong></span>
+                  <span>Finalizadas: <strong style={{color:t.text}}>{p.opsFin}</strong></span>
+                  {p.maxDiasAtraso>2&&<span>Mayor atraso: <strong style={{color:"#ef4444"}}>{p.maxDiasAtraso} días</strong></span>}
+                  {p.vencidasAct>0&&<span style={{color:"#ef4444",fontWeight:700}}>{p.vencidasAct} vencida{p.vencidasAct!==1?"s":""} hoy</span>}
+                </div>
+                <div style={{background:`${col}12`,borderRadius:8,padding:"7px 10px",fontSize:12,fontWeight:700,color:col}}>
+                  {p.sug.txt}{p.sug.ref>0&&<span style={{color:t.sub,fontWeight:600}}> · {p.sug.refTxt} {fmt(p.sug.ref)} (orientativo)</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const PerfilCliente=({client,creditos,productos,setCreditos,setClients,onClose,onEdit,t})=>{
   const [expandidoCred,setExpandidoCred]=useState(null);
   const credC=creditos.filter(c=>c.clienteId===client.id);
@@ -986,6 +1141,7 @@ const PerfilCliente=({client,creditos,productos,setCreditos,setClients,onClose,o
               <button onClick={()=>onEdit(client)} style={{display:"flex",alignItems:"center",gap:6,background:"none",border:`1px solid ${t.border}`,borderRadius:10,padding:"9px 14px",fontWeight:600,fontSize:13,color:t.sub,cursor:"pointer"}}><Icon name="edit" size={14}/>Editar</button>
             </div>
           </div>
+          <PerfilMini clienteId={client.id} creditos={creditos} productos={productos} t={t} margen={16}/>
           <div style={{marginTop:16,maxWidth:380}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,color:t.sub}}>Score</span><span style={{fontSize:12,fontWeight:800,color:client.score>70?t.accent2:client.score>40?"#f59e0b":"#ef4444"}}>{client.score||75}/100</span></div>
             <div style={{height:7,borderRadius:4,background:t.border,overflow:"hidden"}}><div style={{width:`${client.score||75}%`,height:"100%",background:client.score>70?t.accent2:client.score>40?"#f59e0b":"#ef4444",borderRadius:4}}/></div>
@@ -2308,7 +2464,7 @@ Si no encontrás algún dato dejalo vacío. El DNI son solo los números sin pun
 
 // ── CRÉDITOS ──────────────────────────────────────────────────────────────────
 // ── RESUMEN DEL CLIENTE SELECCIONADO (se muestra al elegirlo en el buscador) ──
-const ResumenClienteSel=({clienteId,creditos=[],productos=[],t})=>{
+const ResumenClienteSelBase=({clienteId,creditos=[],productos=[],t})=>{
   if(!clienteId)return null;
   const cid=+clienteId;
   const credAct=creditos.filter(c=>c.clienteId===cid&&c.estado!=="Finalizado");
@@ -2322,7 +2478,7 @@ const ResumenClienteSel=({clienteId,creditos=[],productos=[],t})=>{
   // cuota pagada después de su vencimiento, o mora aplicada en alguna cuota.
   const tuvoAtraso=(op)=>{
     const cuotas=op.detalleCuotas||[];
-    const pagoTarde=cuotas.some(d=>d.fechaPago&&d.fechaVenc&&new Date(d.fechaPago)>new Date(d.fechaVenc));
+    const pagoTarde=cuotas.some(d=>d.fechaPago&&d.fechaVenc&&parseFechaFlex(d.fechaPago)>parseFechaFlex(d.fechaVenc));
     const tuvoMora=cuotas.some(d=>d.valorCuotaEditado&&d.valorCuotaEditado>(op.valorCuota||0));
     const flagHist=(op.historial||[]).some(h=>h.tipo==="atraso"||h.tipo==="moroso");
     return pagoTarde||tuvoMora||flagHist;
@@ -2418,6 +2574,13 @@ const ResumenClienteSel=({clienteId,creditos=[],productos=[],t})=>{
     </div>
   );
 };
+
+const ResumenClienteSel=({clienteId,creditos=[],productos=[],t})=>(
+  <>
+    <ResumenClienteSelBase clienteId={clienteId} creditos={creditos} productos={productos} t={t}/>
+    <PerfilMini clienteId={clienteId} creditos={creditos} productos={productos} t={t}/>
+  </>
+);
 
 // ── NOTAS RÁPIDAS DE UN CRÉDITO/VENTA ─────────────────────────────────────────
 // Guarda una bitácora con fecha en el campo `comentarios` (JSON). Sirve para
@@ -4034,6 +4197,7 @@ export default function App(){
     {id:"cartera",label:"Cartera",icon:"cartera"},
     {id:"historial",label:"Historial",icon:"calendar"},
     {id:"notas",label:"Notas",icon:"edit"},
+    {id:"perfiles",label:"Calificación",icon:"users"},
     {id:"alertas",label:"Alertas",icon:"alert"},
     {id:"presupuesto",label:"Presupuesto",icon:"coin"},
     ...(esAdmin?[{id:"usuarios",label:"Usuarios",icon:"users"}]:[]),
@@ -4265,6 +4429,7 @@ export default function App(){
           {screen==="cartera"&&<Cartera creditos={creditos} productos={productos} clients={clients} t={t}/>}
           {screen==="historial"&&<Historial creditos={creditos} productos={productos} ventasContado={ventasContado} clients={clients} t={t}/>}
           {screen==="notas"&&<PanelNotas creditos={creditos} productos={productos} clients={clients} setCreditos={setCreditos} setProductos={setProductos} t={t}/>}
+          {screen==="perfiles"&&<PanelPerfiles clients={clients} creditos={creditos} productos={productos} t={t}/>}
           {screen==="alertas"&&<Alertas creditos={creditos} clients={clients} t={t}/>}
           {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t} allClients={allClients} allCreditos={allCreditos} allProductos={allProductos} allVentasContado={allVentasContado}/>}
           {screen==="presupuesto"&&<Presupuesto t={t}/>}
@@ -4334,6 +4499,7 @@ export default function App(){
               {[
                 {label:"Historial",icon:"📅",action:()=>{setScreen("historial");setFabOpen(false);}},
                 {label:"Notas",icon:"📝",action:()=>{setScreen("notas");setFabOpen(false);}},
+                {label:"Calificación",icon:"⭐",action:()=>{setScreen("perfiles");setFabOpen(false);}},
                 {label:"Presupuesto",icon:"🧮",action:()=>{setScreen("presupuesto");setFabOpen(false);}},
                 {label:"Cartera",icon:"💼",action:()=>{setScreen("cartera");setFabOpen(false);}},
                 {label:"Papelera",icon:"🗑",action:()=>{setScreen("papelera");setFabOpen(false);}},
@@ -4448,6 +4614,7 @@ export default function App(){
           {screen==="cartera"&&<Cartera creditos={creditos} productos={productos} clients={clients} t={t}/>}
           {screen==="historial"&&<Historial creditos={creditos} productos={productos} ventasContado={ventasContado} clients={clients} t={t}/>}
           {screen==="notas"&&<PanelNotas creditos={creditos} productos={productos} clients={clients} setCreditos={setCreditos} setProductos={setProductos} t={t}/>}
+          {screen==="perfiles"&&<PanelPerfiles clients={clients} creditos={creditos} productos={productos} t={t}/>}
           {screen==="alertas"&&<Alertas creditos={creditos} clients={clients} t={t}/>}
           {screen==="usuarios"&&esAdmin&&<AdminUsuarios t={t} allClients={allClients} allCreditos={allCreditos} allProductos={allProductos} allVentasContado={allVentasContado}/>}
           {screen==="presupuesto"&&<Presupuesto t={t}/>}

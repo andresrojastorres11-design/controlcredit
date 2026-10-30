@@ -1625,13 +1625,19 @@ const Dashboard=({clients,creditos,setCreditos,productos,setProductos,ventasCont
   // Por cobrar = saldo pendiente créditos + saldo pendiente productos
   const porCobrar=activos.reduce((s,c)=>s+c.saldoPendiente,0)
     +productosActivos.reduce((s,p)=>s+(p.saldoPendiente||0),0);
-  // Ganancia esperada = total a cobrar - capital prestado (incluye moras editadas)
+  // Ganancia esperada = total a cobrar - capital prestado (incluye moras editadas).
+  // Las operaciones FINALIZADAS (incluye las refinanciadas) ya no esperan nada más:
+  // su ganancia es lo que realmente se cobró, así no queda ganancia "fantasma" pendiente.
   const ganEsp=creditos.reduce((s,c)=>{
+    if(c.estado==="Finalizado")return s+(c.saldoCobrado-(c.monto/(c.cuotas||1))*c.cuotasPagadas);
     const totalReal=(c.detalleCuotas&&c.detalleCuotas.length>0)
       ?c.detalleCuotas.reduce((ss,d)=>ss+(d.valorCuotaEditado||c.valorCuota),0)
       :c.totalCobrar;
     return s+(totalReal-c.monto);
-  },0)+productos.reduce((s,p)=>s+p.ganancia+(p.detalleCuotas||[]).reduce((ss,d)=>ss+(d.valorCuotaEditado?d.valorCuotaEditado-(p.valorCuota||0):0),0),0);
+  },0)+productos.reduce((s,p)=>{
+    if(p.estado==="Finalizado")return s+(p.saldoCobrado-(p.inversion/(p.cuotas||1))*p.cuotasPagadas);
+    return s+p.ganancia+(p.detalleCuotas||[]).reduce((ss,d)=>ss+(d.valorCuotaEditado?d.valorCuotaEditado-(p.valorCuota||0):0),0);
+  },0);
 
   // Ganancia realizada = lo efectivamente cobrado - capital recuperado
   // Así si cobraste $120 en vez de $100 (mora), impacta +$20 extra
